@@ -129,6 +129,8 @@ data class BatteryTelemetry(
     val levelPercent: Int = 85,
     val isCharging: Boolean = false,
     val wattage: Float = 0f,
+    val currentMilliAmps: Int = 0,
+    val chargingType: String = "",
     val temperatureCelsius: Float = 31.5f,
     val voltageMv: Int = 4150
 )

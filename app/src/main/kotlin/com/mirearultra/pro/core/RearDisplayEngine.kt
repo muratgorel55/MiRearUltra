@@ -412,20 +412,128 @@ object RearDisplayEngine {
      * Bekçi servis tarafından çağrılır: arka ekranda başka bir uygulama (ör. Kamera) açıksa dokunmaz,
      * aksi halde MiRearUltra arka ekranını geri getirir.
      */
+    data class FrontTaskInfo(
+        val taskId: Int,
+        val packageName: String,
+        val componentName: String? = null
+    )
+
+    fun getFrontDisplayTopTask(context: Context): FrontTaskInfo? {
+        val actOut = readCommand("dumpsys", "activity", "activities", timeoutMs = 2500L)
+        if (!actOut.isNullOrBlank()) {
+            val topResumedRegex = Regex("""topResumedActivity=ActivityRecord\{[^\s]+ [^\s]+ ([^\s/]+)/([^\s]+) t(\d+)""")
+            for (line in actOut.lineSequence()) {
+                val m = topResumedRegex.find(line)
+                if (m != null) {
+                    val pkg = m.groupValues[1]
+                    val act = m.groupValues[2]
+                    val tid = m.groupValues[3].toIntOrNull() ?: continue
+                    if (pkg != context.packageName && pkg != "com.android.systemui" && pkg != "com.miui.home") {
+                        val fullComponent = if (act.startsWith(".")) "$pkg$act" else "$pkg/$act"
+                        return FrontTaskInfo(tid, pkg, fullComponent)
+                    }
+                }
+            }
+            val resumedRegex = Regex("""mResumedActivity: ActivityRecord\{[^\s]+ [^\s]+ ([^\s/]+)/([^\s]+) t(\d+)""")
+            for (line in actOut.lineSequence()) {
+                val m = resumedRegex.find(line)
+                if (m != null) {
+                    val pkg = m.groupValues[1]
+                    val act = m.groupValues[2]
+                    val tid = m.groupValues[3].toIntOrNull() ?: continue
+                    if (pkg != context.packageName && pkg != "com.android.systemui" && pkg != "com.miui.home") {
+                        val fullComponent = if (act.startsWith(".")) "$pkg$act" else "$pkg/$act"
+                        return FrontTaskInfo(tid, pkg, fullComponent)
+                    }
+                }
+            }
+        }
+
+        val winOut = readCommand("dumpsys", "window", "displays", timeoutMs = 2500L)
+        if (!winOut.isNullOrBlank()) {
+            val focusRegex = Regex("""mCurrentFocus=Window\{[^\s]+ [^\s]+ ([^\s/]+)/([^\s}]+)""")
+            val focusMatch = focusRegex.find(winOut)
+            if (focusMatch != null) {
+                val pkg = focusMatch.groupValues[1]
+                val act = focusMatch.groupValues[2]
+                if (pkg != context.packageName && pkg != "com.android.systemui" && pkg != "com.miui.home") {
+                    val fullComponent = if (act.startsWith(".")) "$pkg$act" else "$pkg/$act"
+                    return FrontTaskInfo(0, pkg, fullComponent)
+                }
+            }
+        }
+
+        val tasksOut = readCommand("dumpsys", "activity", "recents", timeoutMs = 2000L)
+        if (!tasksOut.isNullOrBlank()) {
+            val taskRegex = Regex("""TaskId=(\d+): ([^/\s]+)/([^\s]+)""")
+            for (line in tasksOut.lineSequence()) {
+                val m = taskRegex.find(line)
+                if (m != null) {
+                    val tid = m.groupValues[1].toIntOrNull() ?: continue
+                    val pkg = m.groupValues[2]
+                    val act = m.groupValues[3]
+                    if (pkg != context.packageName && pkg != "com.android.systemui" && pkg != "com.miui.home") {
+                        return FrontTaskInfo(tid, pkg, "$pkg/$act")
+                    }
+                }
+            }
+        }
+
+        val stackOut = readCommand(AM, "stack", "list", timeoutMs = 2000L)
+        if (!stackOut.isNullOrBlank()) {
+            val frontTask = parseTasksOnDisplay(stackOut, Display.DEFAULT_DISPLAY).firstOrNull { (_, pkg) ->
+                pkg != "com.android.systemui" && pkg != "com.miui.home" && pkg != context.packageName
+            }
+            if (frontTask != null) {
+                return FrontTaskInfo(frontTask.first, frontTask.second, null)
+            }
+        }
+
+        return null
+    }
+
+    fun getRearDisplayTopTask(context: Context, rearDisplayId: Int): FrontTaskInfo? {
+        val winOut = readCommand("dumpsys", "window", "displays", timeoutMs = 2500L)
+        if (!winOut.isNullOrBlank()) {
+            var inRear = false
+            for (line in winOut.lineSequence()) {
+                if (line.contains("mDisplayId=$rearDisplayId") || line.contains("Display #$rearDisplayId")) {
+                    inRear = true
+                    continue
+                }
+                if (inRear && (line.contains("mDisplayId=") || line.contains("Display #"))) {
+                    inRear = false
+                }
+                if (inRear) {
+                    val focusRegex = Regex("""mCurrentFocus=Window\{[^\s]+ [^\s]+ ([^\s/]+)/([^\s}]+)""")
+                    val m = focusRegex.find(line)
+                    if (m != null) {
+                        val pkg = m.groupValues[1]
+                        val act = m.groupValues[2]
+                        if (pkg != context.packageName && pkg != XIAOMI_REAR_PACKAGE && pkg != "com.android.systemui") {
+                            return FrontTaskInfo(0, pkg, "$pkg/$act")
+                        }
+                    }
+                }
+            }
+        }
+        val stackOut = readCommand(AM, "stack", "list", timeoutMs = 2000L)
+        if (!stackOut.isNullOrBlank()) {
+            val rearTasks = parseTasksOnDisplay(stackOut, rearDisplayId)
+            val nonSys = rearTasks.firstOrNull { it.second != XIAOMI_REAR_PACKAGE && it.second != context.packageName }
+            if (nonSys != null) {
+                return FrontTaskInfo(nonSys.first, nonSys.second, null)
+            }
+        }
+        return null
+    }
+
     fun isCameraActiveOnRear(context: Context): Boolean {
         if (System.currentTimeMillis() < suppressRelaunchUntil) return true
         val rearId = getTargetRearDisplayId(context)
         if (rearId <= 0 || rearId == Display.DEFAULT_DISPLAY) return false
-        val stackOut = readCommand(AM, "stack", "list", timeoutMs = 2500L)
-        val tasks = stackOut?.let { parseTasksOnDisplay(it, rearId) }.orEmpty()
-        val top = tasks.firstOrNull()?.second
-        // Eğer arka ekranda Kamera veya kullanıcının taşıdığı herhangi bir 3. parti uygulama açıksa:
-        if (top != null && top != context.packageName && top != XIAOMI_REAR_PACKAGE && top != "com.miui.subscreen" && top != "com.android.systemui") {
-            suppressRelaunchUntil = System.currentTimeMillis() + 60_000L
-            return true
-        }
-        val dumpOut = readCommand("dumpsys", "window", "displays", timeoutMs = 2000L)
-        if (dumpOut != null && (dumpOut.contains("com.android.camera") || (dumpOut.contains("mCurrentFocus=Window{") && !dumpOut.contains(context.packageName)))) {
+        val task = getRearDisplayTopTask(context, rearId)
+        if (task != null) {
             suppressRelaunchUntil = System.currentTimeMillis() + 60_000L
             return true
         }
@@ -722,21 +830,52 @@ object RearDisplayEngine {
             }
             runCommand(CMD, "statusbar", "collapse")
             runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
-            val stackOut = readCommand(AM, "stack", "list", timeoutMs = 3000L)
-            val frontTask = stackOut?.let { out ->
-                parseTasksOnDisplay(out, Display.DEFAULT_DISPLAY).firstOrNull { (_, pkg) ->
-                    pkg != "com.android.systemui" &&
-                        pkg != "com.miui.home" &&
-                        pkg != context.packageName
-                }
-            }
+            runCommand(CMD, "window", "density", "260", "-d", rearDisplayId.toString())
+
+            val frontTask = getFrontDisplayTopTask(context)
             if (frontTask != null) {
-                // Aktif görevi arkaya taşıdıktan sonra 2 saniyede saatin gelmesini engeller
-                suppressRelaunchUntil = System.currentTimeMillis() + 3600_000L
-                val moveRes = moveTaskToDisplay(frontTask.first, rearDisplayId)
-                restartXiaomiSubscreenIfUnder(frontTask.second, rearDisplayId)
-                RearStateRepository.appendLog("🔄 Aktif uygulama (${frontTask.second}, Görev #${frontTask.first}) arka ekrana (#$rearDisplayId) taşındı: $moveRes")
+                // Aktif görevi arkaya taşıdıktan sonra saatin geri gelmesini engeller
+                suppressRelaunchUntil = System.currentTimeMillis() + 86400_000L
+
+                var moved = false
+                if (frontTask.taskId > 0) {
+                    val move1 = runCommand("cmd", "activity", "task", "moveToDisplay", frontTask.taskId.toString(), rearDisplayId.toString())
+                    if (move1 == "ok") moved = true
+                    if (!moved) {
+                        val move2 = runCommand(AM, "task", "moveToDisplay", frontTask.taskId.toString(), rearDisplayId.toString())
+                        if (move2 == "ok") moved = true
+                    }
+                    if (!moved) {
+                        val move3 = moveTaskToDisplay(frontTask.taskId, rearDisplayId)
+                        if (move3 == "ok") moved = true
+                    }
+                    if (!moved) {
+                        val move4 = runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", frontTask.taskId.toString(), "i32", rearDisplayId.toString())
+                        if (move4 == "ok") moved = true
+                    }
+                }
+
+                if (!moved) {
+                    val comp = frontTask.componentName
+                    if (!comp.isNullOrBlank()) {
+                        val launchRes = runCommand(AM, "start", "--display", rearDisplayId.toString(), "-n", comp)
+                        if (launchRes == "ok") moved = true
+                    }
+                    if (!moved) {
+                        val pm = context.packageManager
+                        val launchIntent = pm.getLaunchIntentForPackage(frontTask.packageName)
+                        val cmp = launchIntent?.component?.flattenToShortString()
+                        if (cmp != null) {
+                            runCommand(AM, "start", "--display", rearDisplayId.toString(), "-n", cmp)
+                            moved = true
+                        }
+                    }
+                }
+
+                restartXiaomiSubscreenIfUnder(frontTask.packageName, rearDisplayId)
+                RearStateRepository.appendLog("🚀 ${frontTask.packageName} (Görev #${frontTask.taskId}) arka ekrana (#$rearDisplayId, 260dpi) aktarıldı.")
             } else {
+                RearStateRepository.appendLog("⚠️ Aktif ön ekran uygulaması tespit edilemedi. Arka ekran ana görünümüne dönülüyor.")
                 mainHandler.post { launchRearExperience(context, RearScreenMode.HOME_LAUNCHER) }
             }
         }
@@ -759,20 +898,25 @@ object RearDisplayEngine {
     fun moveRearTaskBackToFrontDisplay(context: Context) {
         val rearDisplayId = getTargetRearDisplayId(context)
         shellExecutor.execute {
+            suppressRelaunchUntil = 0L
             if (checkShizukuStatus()) {
                 if (RearStateRepository.settings.value.autoResetDpiOnReturn) {
                     runCommand(CMD, "window", "density", "reset", "-d", rearDisplayId.toString())
                 }
-                val stackOut = readCommand(AM, "stack", "list", timeoutMs = 3000L)
-                val rearTasks = stackOut?.let { parseTasksOnDisplay(it, rearDisplayId) }.orEmpty()
-                suppressRelaunchUntil = 0L
-                val nonSystemTask = rearTasks.firstOrNull { it.second != XIAOMI_REAR_PACKAGE }
-                if (nonSystemTask != null) {
-                    val res = moveTaskToDisplay(nonSystemTask.first, Display.DEFAULT_DISPLAY)
-                    RearStateRepository.appendLog("📲 ${nonSystemTask.second} ön ekrana (Display #0) geri taşındı: $res")
+                val rearTask = getRearDisplayTopTask(context, rearDisplayId)
+                if (rearTask != null) {
+                    if (rearTask.taskId > 0) {
+                        runCommand("cmd", "activity", "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
+                        runCommand(AM, "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
+                    }
+                    if (!rearTask.componentName.isNullOrBlank()) {
+                        runCommand(AM, "start", "--display", Display.DEFAULT_DISPLAY.toString(), "-n", rearTask.componentName)
+                    }
+                    RearStateRepository.appendLog("📲 ${rearTask.packageName} ön ekrana (Display #0) geri aktarıldı.")
                 } else {
                     RearStateRepository.appendLog("ℹ️ Arka ekranda taşınacak açık görev bulunamadı.")
                 }
+                mainHandler.post { launchRearExperience(context, RearScreenMode.HOME_LAUNCHER) }
             } else {
                 val intent = Intent(context, com.mirearultra.pro.MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

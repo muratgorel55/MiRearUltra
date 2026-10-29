@@ -139,7 +139,7 @@ fun MainScreen(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "Xiaomi 17 Pro Max • v1.1 Alpha (Public Preview)",
+                                text = "Xiaomi 17 Pro Max • v1.2 Alpha (Public Preview)",
                                 color = Color(0xFF9BA3B8),
                                 fontSize = 11.sp
                             )

@@ -148,6 +148,11 @@ class NativeHyperOsRearView(
     private var ledScrollX = 0f
     private var isSosStrobeOn = false
     private var sosStrobeState = false
+    private var chargeAnimAngle = 0f
+    private var chargePulsePhase = 0f
+    private var isTouchLockedSleep = false
+    private var lastDoubleTapCandidateMs = 0L
+    private var lockHintAlpha = 0f
 
     // Retro Pong Mini Oyun Durumu
     private var pongBallX = 220f
@@ -185,6 +190,19 @@ class NativeHyperOsRearView(
             // Pong animasyon adımı
             if (currentPage == Page.MINI_GAME && !pongGameOver) {
                 stepPongGame()
+            }
+            if (RearStateRepository.batteryTelemetry.value.isCharging) {
+                chargeAnimAngle = (chargeAnimAngle + 3.0f) % 360f
+                chargePulsePhase = (chargePulsePhase + 0.08f) % (2f * Math.PI.toFloat())
+            }
+
+            // 10 saniye boşta kalınca otomatik ekranı karart ve dokunmatiği kilitle
+            val idleMs = SystemClock.uptimeMillis() - lastTouchTimestamp
+            val isCall = RearStateRepository.currentCall.value != null
+            val isAlarm = RearStateRepository.alarmRinging.value != null
+            if (!isPreviewOnFront && !isCall && !isAlarm && idleMs >= 10_000L && !isTouchLockedSleep) {
+                isTouchLockedSleep = true
+                RearStateRepository.setRearScreenDimmedSleep(true)
             }
 
             invalidate()
@@ -274,7 +292,9 @@ class NativeHyperOsRearView(
     }
 
     private fun shouldKeepTicker(): Boolean {
+        if (isTouchLockedSleep) return false
         return shouldSpin() ||
+                RearStateRepository.batteryTelemetry.value.isCharging ||
                 (currentPage == Page.MUSIC && RearStateRepository.mediaState.value.isPlaying) ||
                 (currentPage == Page.MINI_GAME && !pongGameOver)
     }
@@ -284,7 +304,185 @@ class NativeHyperOsRearView(
         if (isAttachedToWindow && shouldKeepTicker()) mainHandler.post(spinTicker)
     }
 
-    // ---------------------------------------------------------------- yaşam döngüsü
+    private fun drawChargingScene(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        cl: Float,
+        cw: Float
+    ) {
+        // 1. Saf AMOLED Derin Siyah Arka Plan
+        fillPaint.shader = null
+        fillPaint.color = Color.rgb(0, 0, 0)
+        canvas.drawRect(0f, 0f, w, h, fillPaint)
+
+        val cx = cl + cw * 0.5f
+        val telemetry = RearStateRepository.batteryTelemetry.value
+        val now = Date()
+
+        // -------------------------------------------------------------
+        // ÜST KISIM: Saat, Tarih & Canlı Telemetri (Asla Şarjla Çakışmaz)
+        // -------------------------------------------------------------
+        textPaint.shader = null
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        textPaint.textSize = h * 0.13f
+        textPaint.color = Color.rgb(245, 248, 255)
+        textPaint.setShadowLayer(16f, 0f, 0f, Color.argb(140, 0, 229, 255))
+        canvas.drawText(timeFormat.format(now), cx, h * 0.13f, textPaint)
+        textPaint.clearShadowLayer()
+
+        textPaint.textSize = h * 0.042f
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        textPaint.color = Color.rgb(130, 200, 255)
+        val infoLine = "${dateFormat.format(now)}  •  ${telemetry.voltageMv}mV  •  ${telemetry.temperatureCelsius}°C"
+        canvas.drawText(infoLine, cx, h * 0.19f, textPaint)
+
+        strokePaint.shader = null
+        strokePaint.color = Color.argb(40, 0, 229, 255)
+        strokePaint.strokeWidth = 1.5f
+        canvas.drawLine(cx - cw * 0.35f, h * 0.22f, cx + cw * 0.35f, h * 0.22f, strokePaint)
+
+        // -------------------------------------------------------------
+        // MERKEZ: Fütüristik Sıvı Enerji Şarj Reaktörü & Canlı Watt / Akım
+        // -------------------------------------------------------------
+        val reactorY = h * 0.58f
+        val radius = h * 0.25f
+
+        // Dış Parlama Aurası
+        val pulse = 1f + 0.05f * kotlin.math.sin(chargePulsePhase.toDouble()).toFloat()
+        val glowR = radius * 1.30f * pulse
+        val glowShader = RadialGradient(
+            cx, reactorY, glowR,
+            intArrayOf(
+                Color.argb(75, 0, 229, 255),
+                Color.argb(25, 0, 255, 163),
+                Color.TRANSPARENT
+            ),
+            floatArrayOf(0f, 0.65f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        fillPaint.shader = glowShader
+        canvas.drawCircle(cx, reactorY, glowR, fillPaint)
+        fillPaint.shader = null
+
+        // Reaktör İç Tabanı
+        fillPaint.color = Color.rgb(6, 10, 18)
+        canvas.drawCircle(cx, reactorY, radius, fillPaint)
+
+        // İç Sıvı Enerji Dalgası
+        val fillPct = (telemetry.levelPercent / 100f).coerceIn(0.05f, 1f)
+        val liquidBaseY = (reactorY + radius) - (radius * 2f * fillPct)
+
+        val saveLiquid = canvas.save()
+        tmpPath.reset()
+        tmpPath.addCircle(cx, reactorY, radius * 0.95f, Path.Direction.CW)
+        canvas.clipPath(tmpPath)
+
+        val wavePath = Path()
+        wavePath.moveTo(cx - radius, reactorY + radius)
+        wavePath.lineTo(cx - radius, liquidBaseY)
+        val waveAmp = 5f
+        var xStep = cx - radius
+        while (xStep <= cx + radius) {
+            val waveY = liquidBaseY + waveAmp * kotlin.math.sin(chargePulsePhase + (xStep - cx) * 0.06f).toFloat()
+            wavePath.lineTo(xStep, waveY)
+            xStep += 10f
+        }
+        wavePath.lineTo(cx + radius, reactorY + radius)
+        wavePath.close()
+
+        val liquidShader = LinearGradient(
+            cx, liquidBaseY, cx, reactorY + radius,
+            Color.argb(160, 0, 229, 255),
+            Color.argb(220, 0, 255, 163),
+            Shader.TileMode.CLAMP
+        )
+        fillPaint.shader = liquidShader
+        canvas.drawPath(wavePath, fillPaint)
+        fillPaint.shader = null
+        canvas.restoreToCount(saveLiquid)
+
+        // Dış Dönen Neon Siber Halka
+        val ringMatrix = Matrix()
+        ringMatrix.postRotate(chargeAnimAngle, cx, reactorY)
+        val ringSweep = SweepGradient(
+            cx, reactorY,
+            intArrayOf(
+                Color.rgb(0, 229, 255),
+                Color.rgb(0, 255, 163),
+                Color.rgb(255, 179, 0),
+                Color.rgb(255, 45, 85),
+                Color.rgb(0, 229, 255)
+            ),
+            null
+        )
+        ringSweep.setLocalMatrix(ringMatrix)
+        strokePaint.shader = ringSweep
+        strokePaint.strokeWidth = 5.5f
+        canvas.drawCircle(cx, reactorY, radius, strokePaint)
+        strokePaint.shader = null
+
+        // İç Zıt Yöne Dönen Amber Elektrik Arkı
+        strokePaint.color = Color.rgb(255, 179, 0)
+        strokePaint.strokeWidth = 6f
+        rect.set(cx - radius * 0.86f, reactorY - radius * 0.86f, cx + radius * 0.86f, reactorY + radius * 0.86f)
+        canvas.drawArc(rect, -chargeAnimAngle * 1.5f, 110f, false, strokePaint)
+
+        // Yörüngede Dönen 8 Parçacık Kıvılcımı
+        for (i in 0 until 8) {
+            val angleRad = Math.toRadians((chargeAnimAngle * 1.1f + i * 45f).toDouble())
+            val px = cx + (radius * 1.04f) * kotlin.math.cos(angleRad).toFloat()
+            val py = reactorY + (radius * 1.04f) * kotlin.math.sin(angleRad).toFloat()
+            val pAlpha = (150 + 90 * kotlin.math.sin((chargePulsePhase + i).toDouble())).toInt().coerceIn(50, 255)
+            fillPaint.color = if (i % 2 == 0) Color.argb(pAlpha, 0, 229, 255) else Color.argb(pAlpha, 255, 179, 0)
+            canvas.drawCircle(px, py, if (i % 2 == 0) 3.5f else 2.5f, fillPaint)
+        }
+
+        // Merkez Batarya Yüzdesi
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
+        textPaint.textSize = h * 0.125f
+        textPaint.color = Color.rgb(240, 255, 250)
+        textPaint.setShadowLayer(14f, 0f, 0f, Color.argb(160, 0, 255, 163))
+        canvas.drawText("${telemetry.levelPercent}%", cx, reactorY - h * 0.01f, textPaint)
+        textPaint.clearShadowLayer()
+
+        // Canlı Gerçek Akım ve Güç (Watt + mA/A + V) Rozeti
+        val wattFormatted = String.format(Locale.US, "%.1f", telemetry.wattage)
+        val ampStr = if (telemetry.currentMilliAmps >= 1000) {
+            String.format(Locale.US, "%.1fA", telemetry.currentMilliAmps / 1000f)
+        } else {
+            "${telemetry.currentMilliAmps}mA"
+        }
+        val voltStr = String.format(Locale.US, "%.1fV", telemetry.voltageMv / 1000f)
+        val wattText = "⚡ ${wattFormatted}W  ($ampStr • $voltStr)"
+
+        val pillW = cw * 0.50f
+        val pillH = h * 0.075f
+        val pillY = reactorY + h * 0.045f
+        rect.set(cx - pillW * 0.5f, pillY, cx + pillW * 0.5f, pillY + pillH)
+        fillPaint.color = Color.argb(180, 15, 22, 35)
+        canvas.drawRoundRect(rect, pillH * 0.5f, pillH * 0.5f, fillPaint)
+
+        strokePaint.color = Color.rgb(255, 179, 0)
+        strokePaint.strokeWidth = 2f
+        canvas.drawRoundRect(rect, pillH * 0.5f, pillH * 0.5f, strokePaint)
+
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        textPaint.textSize = h * 0.044f
+        textPaint.color = Color.rgb(255, 190, 20)
+        textPaint.setShadowLayer(8f, 0f, 0f, Color.argb(140, 255, 179, 0))
+        canvas.drawText(wattText, cx, pillY + pillH * 0.68f, textPaint)
+        textPaint.clearShadowLayer()
+
+        // Alt Protokol Başlığı
+        textPaint.textSize = h * 0.040f
+        textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        textPaint.color = Color.rgb(80, 227, 194)
+        val tagText = telemetry.chargingType.ifBlank { "STANDART ŞARJ" }
+        canvas.drawText(tagText, cx, h * 0.93f, textPaint)
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -401,6 +599,20 @@ class NativeHyperOsRearView(
         // Telefon masada yüzüstü duruyorsa (isPhoneFaceDown) da karartılmaz.
         val isFaceDown = RearStateRepository.isPhoneFaceDown.value
         if (!isPreviewOnFront && !isFaceDown && ((isEarCovered && settings.earProximityCallPrivacy && call != null) || (isPocket && settings.pocketModeProtection))) {
+            canvas.drawColor(Color.BLACK)
+            canvas.restoreToCount(saveAll)
+            return
+        }
+
+        // 10 saniye boyunca temas olmassa ekran kararır ve dokunmatik kilitlenir
+        val idleMs = SystemClock.uptimeMillis() - lastTouchTimestamp
+        val isCall = call != null
+        val isAlarm = alarm != null
+        if (!isPreviewOnFront && !isCall && !isAlarm && idleMs >= 10_000L) {
+            isTouchLockedSleep = true
+        }
+
+        if (!isPreviewOnFront && isTouchLockedSleep && !isCall && !isAlarm) {
             canvas.drawColor(Color.BLACK)
             canvas.restoreToCount(saveAll)
             return
@@ -644,7 +856,14 @@ class NativeHyperOsRearView(
 
     private fun drawPage(canvas: Canvas, page: Page, cl: Float, cw: Float, h: Float, hits: Boolean) {
         when (page) {
-            Page.CLOCK -> drawClockPage(canvas, cl, cw, h)
+            Page.CLOCK -> {
+                val isCharging = RearStateRepository.batteryTelemetry.value.isCharging
+                if (isCharging) {
+                    drawChargingScene(canvas, width.toFloat(), h, cl, cw)
+                } else {
+                    drawClockPage(canvas, cl, cw, h)
+                }
+            }
             Page.MUSIC -> drawMusicPage(canvas, cl, cw, h, hits)
             Page.NAV -> drawNavPage(canvas, cl, cw, h, hits)
             Page.SPEED_DIAL -> drawSpeedDialPage(canvas, cl, cw, h, hits)
@@ -1769,6 +1988,27 @@ class NativeHyperOsRearView(
         val isCall = isRingingCall
         if (!isPreviewOnFront && !isFaceDown && ((isEarCovered && settings.earProximityCallPrivacy && isCall) || (isPocket && settings.pocketModeProtection))) {
             return false
+        }
+
+        // 10 sn temas olmayınca kilitlenen ekran: YALNIZCA 2 KERE TIKLANINCA UYANIR
+        if (!isPreviewOnFront && isTouchLockedSleep && !isCall) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                val now = SystemClock.uptimeMillis()
+                if (now - lastDoubleTapCandidateMs < 650L) {
+                    // Çift dokunma başarılı -> Kilit açıldı!
+                    isTouchLockedSleep = false
+                    lastTouchTimestamp = now
+                    RearStateRepository.setRearScreenDimmedSleep(false)
+                    RearStateRepository.onUserTouchInteraction()
+                    restartSpinIfNeeded()
+                    invalidate()
+                    return true
+                }
+                lastDoubleTapCandidateMs = now
+                invalidate()
+                return true
+            }
+            return true
         }
 
         when (event.actionMasked) {
