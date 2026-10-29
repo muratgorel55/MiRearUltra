@@ -1,6 +1,6 @@
 # 🌌 MiRearUltra (Xiaomi 17 Pro Max Secondary Rear Display Engine)
 
-[![Release](https://img.shields.io/badge/Release-v1.1--Alpha-orange.svg)](https://github.com/)
+[![Release](https://img.shields.io/badge/Release-v1.1--Alpha-orange.svg)](https://github.com/muratgorel55/MiRearUltra/)
 [![HyperOS](https://img.shields.io/badge/HyperOS-3.0%2B-blue.svg)](https://miui.com/)
 [![Android](https://img.shields.io/badge/Android-15%20%2F%2016-green.svg)](https://developer.android.com/)
 [![Display](https://img.shields.io/badge/Display-976x596%20AMOLED%20120Hz%20LTPO-purple.svg)]()
