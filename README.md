@@ -6,6 +6,7 @@
 [![Display](https://img.shields.io/badge/Display-976x596%20AMOLED%20120Hz%20LTPO-purple.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Languages](https://img.shields.io/badge/Languages-10%20Languages%20Supported-yellow.svg)]()
+[![Download APK](https://img.shields.io/badge/Download%20APK-v1.1%20Alpha%20(61.4%20MB)-brightgreen?style=for-the-badge&logo=android)](https://github.com/muratgorel55/MiRearUltra/releases/download/v1.1-alpha/MiRearUltra-v1.1-Alpha-Xiaomi17ProMax.apk)
 
 ---
 
