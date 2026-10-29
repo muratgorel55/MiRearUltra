@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">ライブ画面</string>
+    <string name="tab_modules">モジュール</string>
+    <string name="tab_privacy">権限とプライバシー</string>
+    <string name="tab_customize">カスタマイズ</string>
+    <string name="incoming_call">着信</string>
+    <string name="answer">応答</string>
+    <string name="decline">拒否</string>
+    <string name="speed_dial">短縮ダイヤル</string>
+    <string name="speed_dial_desc">よく使う6件 • タップしてスピーカー通話</string>
+    <string name="speedometer">スピードメーター</string>
+    <string name="start_maps">マップ起動</string>
+    <string name="quick_tools">クイックツール</string>
+    <string name="torch">懐中電灯</string>
+    <string name="voice_memo">ボイスメモ</string>
+    <string name="spirit_level">水準器</string>
+    <string name="notifications">通知センター</string>
+    <string name="clear_all">すべて消去</string>
+    <string name="close">閉じる</string>
+    <string name="retro_pong">レトロポン (120Hz LTPO)</string>
+    <string name="game_over">ゲームオーバー</string>
+    <string name="restart">もう一度</string>
+    <string name="score">スコア</string>
+    <string name="steps">歩数</string>
+    <string name="pick_contact">連絡先から選択</string>
+    <string name="manual_add">手動で追加</string>
+    <string name="auto_fill">よく通話する連絡先を自動入力</string>
+    <string name="alpha_notice">アルファ版 • 鋭意開発中</string>
+</resources>

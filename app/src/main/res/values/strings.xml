@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">Live Screen</string>
+    <string name="tab_modules">Modules</string>
+    <string name="tab_privacy">Privacy &amp; Permissions</string>
+    <string name="tab_customize">Customize</string>
+    <string name="incoming_call">Incoming Call</string>
+    <string name="answer">Answer</string>
+    <string name="decline">Decline</string>
+    <string name="speed_dial">Speed Dial</string>
+    <string name="speed_dial_desc">Top 6 contacts • Tap to call hands-free</string>
+    <string name="speedometer">Speedometer</string>
+    <string name="start_maps">Start Maps</string>
+    <string name="quick_tools">Quick Tools</string>
+    <string name="torch">Flashlight</string>
+    <string name="voice_memo">Voice Memo</string>
+    <string name="spirit_level">Spirit Level</string>
+    <string name="notifications">Notification Shade</string>
+    <string name="clear_all">Clear All</string>
+    <string name="close">Close</string>
+    <string name="retro_pong">Retro Pong (120Hz LTPO)</string>
+    <string name="game_over">Game Over</string>
+    <string name="restart">Play Again</string>
+    <string name="score">Score</string>
+    <string name="steps">Steps</string>
+    <string name="pick_contact">Pick from Contacts</string>
+    <string name="manual_add">Manual Add</string>
+    <string name="auto_fill">Auto-fill Most Called</string>
+    <string name="alpha_notice">Alpha Version • Under Active Development</string>
+</resources>

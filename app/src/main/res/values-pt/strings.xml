@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">Tela ao Vivo</string>
+    <string name="tab_modules">Módulos</string>
+    <string name="tab_privacy">Permissões &amp; Privacidade</string>
+    <string name="tab_customize">Personalizar</string>
+    <string name="incoming_call">Chamada Recebida</string>
+    <string name="answer">Atender</string>
+    <string name="decline">Recusar</string>
+    <string name="speed_dial">Discagem Rápida</string>
+    <string name="speed_dial_desc">Top 6 contatos • Toque para ligar viva-voz</string>
+    <string name="speedometer">Velocímetro</string>
+    <string name="start_maps">Iniciar Mapas</string>
+    <string name="quick_tools">Ferramentas</string>
+    <string name="torch">Lanterna</string>
+    <string name="voice_memo">Gravador de voz</string>
+    <string name="spirit_level">Nível de bolha</string>
+    <string name="notifications">Notificações</string>
+    <string name="clear_all">Limpar tudo</string>
+    <string name="close">Fechar</string>
+    <string name="retro_pong">Retro Pong (120Hz LTPO)</string>
+    <string name="game_over">Fim de Jogo</string>
+    <string name="restart">Jogar Novamente</string>
+    <string name="score">Pontos</string>
+    <string name="steps">Passos</string>
+    <string name="pick_contact">Escolher dos contatos</string>
+    <string name="manual_add">Adicionar manual</string>
+    <string name="auto_fill">Preencher mais chamados</string>
+    <string name="alpha_notice">Versão Alpha • Em desenvolvimento ativo</string>
+</resources>

@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">Canlı Ekran</string>
+    <string name="tab_modules">Modüller</string>
+    <string name="tab_privacy">İzin &amp; Gizlilik</string>
+    <string name="tab_customize">Özelleştir</string>
+    <string name="incoming_call">Gelen Arama</string>
+    <string name="answer">Cevapla</string>
+    <string name="decline">Reddet</string>
+    <string name="speed_dial">Hızlı Arama</string>
+    <string name="speed_dial_desc">Sık aranan 6 kişi • Dokunarak eller serbest ara</string>
+    <string name="speedometer">Hız Göstergesi</string>
+    <string name="start_maps">Harita Başlat</string>
+    <string name="quick_tools">Hızlı Araçlar</string>
+    <string name="torch">El Feneri</string>
+    <string name="voice_memo">Sesli Not</string>
+    <string name="spirit_level">Su Terazisi</string>
+    <string name="notifications">Bildirim Merkezi</string>
+    <string name="clear_all">Tümünü Sil</string>
+    <string name="close">Kapat</string>
+    <string name="retro_pong">Retro Pong (120Hz LTPO)</string>
+    <string name="game_over">Oyun Bitti</string>
+    <string name="restart">Yeniden Başlat</string>
+    <string name="score">Skor</string>
+    <string name="steps">Adım</string>
+    <string name="pick_contact">Rehberden Seç</string>
+    <string name="manual_add">Manuel Ekle</string>
+    <string name="auto_fill">En Çok Arananları Otomatik Doldur</string>
+    <string name="alpha_notice">Alpha Sürüm • Geliştirilmeye Devam Ediyor</string>
+</resources>

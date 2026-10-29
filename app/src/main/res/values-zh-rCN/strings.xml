@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">副屏实时</string>
+    <string name="tab_modules">功能模块</string>
+    <string name="tab_privacy">权限与隐私</string>
+    <string name="tab_customize">个性化</string>
+    <string name="incoming_call">来电</string>
+    <string name="answer">接听</string>
+    <string name="decline">拒绝</string>
+    <string name="speed_dial">快速拨号</string>
+    <string name="speed_dial_desc">常用 6 位联系人 • 点击免提呼叫</string>
+    <string name="speedometer">速度计</string>
+    <string name="start_maps">启动地图</string>
+    <string name="quick_tools">快捷工具</string>
+    <string name="torch">手电筒</string>
+    <string name="voice_memo">录音备忘</string>
+    <string name="spirit_level">水平仪</string>
+    <string name="notifications">通知中心</string>
+    <string name="clear_all">全部清除</string>
+    <string name="close">关闭</string>
+    <string name="retro_pong">复古乒乓 (120Hz LTPO)</string>
+    <string name="game_over">游戏结束</string>
+    <string name="restart">再玩一次</string>
+    <string name="score">得分</string>
+    <string name="steps">步数</string>
+    <string name="pick_contact">从通讯录选取</string>
+    <string name="manual_add">手动添加</string>
+    <string name="auto_fill">自动填充常用联系人</string>
+    <string name="alpha_notice">Alpha 测试版 • 持续积极开发中</string>
+</resources>

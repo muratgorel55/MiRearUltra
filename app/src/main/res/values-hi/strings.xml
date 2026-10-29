@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">लाइव स्क्रीन</string>
+    <string name="tab_modules">मॉड्यूल</string>
+    <string name="tab_privacy">गोपनीयता और अनुमतियां</string>
+    <string name="tab_customize">अनुकूलित करें</string>
+    <string name="incoming_call">आने वाली कॉल</string>
+    <string name="answer">उत्तर दें</string>
+    <string name="decline">अस्वीकार</string>
+    <string name="speed_dial">स्पीड डायल</string>
+    <string name="speed_dial_desc">शीर्ष 6 संपर्क • कॉल करने के लिए टैप करें</string>
+    <string name="speedometer">स्पीडोमीटर</string>
+    <string name="start_maps">मानचित्र शुरू करें</string>
+    <string name="quick_tools">त्वरित उपकरण</string>
+    <string name="torch">टॉर्च</string>
+    <string name="voice_memo">वॉयस मेमो</string>
+    <string name="spirit_level">स्पिरिट लेवल</string>
+    <string name="notifications">सूचनाएं</string>
+    <string name="clear_all">सभी साफ़ करें</string>
+    <string name="close">बंद करें</string>
+    <string name="retro_pong">रेट्रो पोंग (120Hz LTPO)</string>
+    <string name="game_over">खेल समाप्त</string>
+    <string name="restart">फिर से खेलें</string>
+    <string name="score">स्कोर</string>
+    <string name="steps">कदम</string>
+    <string name="pick_contact">संपर्कों से चुनें</string>
+    <string name="manual_add">मैन्युअल जोड़ें</string>
+    <string name="auto_fill">सबसे अधिक कॉल किए गए भरें</string>
+    <string name="alpha_notice">अल्फा संस्करण • सक्रिय विकास के अधीन</string>
+</resources>

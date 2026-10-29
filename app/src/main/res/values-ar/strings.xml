@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">الشاشة الحية</string>
+    <string name="tab_modules">الوحدات</string>
+    <string name="tab_privacy">الأذونات والخصوصية</string>
+    <string name="tab_customize">تخصيص</string>
+    <string name="incoming_call">مكالمة واردة</string>
+    <string name="answer">رد</string>
+    <string name="decline">رفض</string>
+    <string name="speed_dial">الاتصال السريع</string>
+    <string name="speed_dial_desc">أهم 6 جهات اتصال • انقر للاتصال</string>
+    <string name="speedometer">عداد السرعة</string>
+    <string name="start_maps">بدء الخرائط</string>
+    <string name="quick_tools">أدوات سريعة</string>
+    <string name="torch">مصباح</string>
+    <string name="voice_memo">مذكرة صوتية</string>
+    <string name="spirit_level">ميزان الماء</string>
+    <string name="notifications">لوحة الإشعارات</string>
+    <string name="clear_all">مسح الكل</string>
+    <string name="close">إغلاق</string>
+    <string name="retro_pong">بونغ الكلاسيكية (120Hz LTPO)</string>
+    <string name="game_over">انتهت اللعبة</string>
+    <string name="restart">إعادة اللعب</string>
+    <string name="score">النتيجة</string>
+    <string name="steps">خطوة</string>
+    <string name="pick_contact">اختر من جهات الاتصال</string>
+    <string name="manual_add">إضافة يدوية</string>
+    <string name="auto_fill">ملء تلقائي للمتصلين بكثرة</string>
+    <string name="alpha_notice">إصدار ألفا • قيد التطوير المستمر</string>
+</resources>

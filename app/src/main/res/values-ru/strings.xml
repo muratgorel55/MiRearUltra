@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MiRearUltra</string>
+    <string name="tab_live">Экран Live</string>
+    <string name="tab_modules">Модули</string>
+    <string name="tab_privacy">Разрешения и приватность</string>
+    <string name="tab_customize">Настройки</string>
+    <string name="incoming_call">Входящий звонок</string>
+    <string name="answer">Ответить</string>
+    <string name="decline">Отклонить</string>
+    <string name="speed_dial">Быстрый набор</string>
+    <string name="speed_dial_desc">Топ 6 контактов • Нажмите для звонка</string>
+    <string name="speedometer">Спидометр</string>
+    <string name="start_maps">Открыть карты</string>
+    <string name="quick_tools">Инструменты</string>
+    <string name="torch">Фонарик</string>
+    <string name="voice_memo">Диктофон</string>
+    <string name="spirit_level">Уровень</string>
+    <string name="notifications">Уведомления</string>
+    <string name="clear_all">Очистить всё</string>
+    <string name="close">Закрыть</string>
+    <string name="retro_pong">Ретро Понг (120Hz LTPO)</string>
+    <string name="game_over">Игра окончена</string>
+    <string name="restart">Сыграть снова</string>
+    <string name="score">Счёт</string>
+    <string name="steps">Шагов</string>
+    <string name="pick_contact">Выбрать из контактов</string>
+    <string name="manual_add">Добавить вручную</string>
+    <string name="auto_fill">Заполнить частыми контактами</string>
+    <string name="alpha_notice">Альфа-версия • В активной разработке</string>
+</resources>
