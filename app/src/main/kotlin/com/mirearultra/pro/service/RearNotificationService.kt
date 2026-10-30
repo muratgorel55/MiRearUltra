@@ -1,4 +1,4 @@
-﻿package com.mirearultra.pro.service
+package com.mirearultra.pro.service
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -66,11 +66,79 @@ class RearNotificationService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
-        val pkg = sbn.packageName ?: return
+        val pkg = sbn.packageName?.lowercase().orEmpty()
         if (pkg == packageName || pkg == "android" || pkg == "com.android.systemui") return
 
         val notif = sbn.notification ?: return
         val extras = notif.extras
+
+        val isDialerPkg = pkg.contains("dialer") || pkg.contains("incallui") ||
+            pkg.contains("telecom") || pkg.contains("contacts") || pkg.contains("phone")
+        val isWhatsApp = pkg.contains("whatsapp")
+        val isVoipPkg = pkg.contains("telegram") || pkg.contains("skype") || pkg.contains("viber") || pkg.contains("discord") || pkg.contains("teams")
+
+        // Missed call check - do NOT treat missed calls as incoming ringing calls
+        val isMissedCall = notif.category == Notification.CATEGORY_MISSED_CALL ||
+            notif.category == "missed_call" ||
+            sbn.tag?.contains("missed", ignoreCase = true) == true ||
+            (notif.actions?.any {
+                val actTitle = it.title?.toString().orEmpty()
+                actTitle.contains("Geri ara", ignoreCase = true) || actTitle.contains("Callback", ignoreCase = true)
+            } == true)
+
+        val hasCallStyle = extras?.getString(Notification.EXTRA_TEMPLATE)?.contains("CallStyle", ignoreCase = true) == true ||
+            extras?.containsKey("android.callType") == true ||
+            extras?.containsKey("android.callPerson") == true ||
+            extras?.containsKey("android.answerIntent") == true ||
+            extras?.containsKey("android.declineIntent") == true
+
+        val hasCallAnswerAction = notif.actions?.any { action ->
+            action.remoteInputs.isNullOrEmpty() && run {
+                val label = action.title?.toString()?.lowercase().orEmpty()
+                label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
+                label.contains("accept") || label.contains("katıl") || label == "aç"
+            }
+        } == true
+
+        val hasCallDeclineAction = notif.actions?.any { action ->
+            val label = action.title?.toString()?.lowercase().orEmpty()
+            label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
+            label.contains("reject") || label.contains("end") || label.contains("yoksay") ||
+            label.contains("dismiss") || label.contains("iptal")
+        } == true
+
+        val hasCallChannel = (notif.channelId?.contains("call", true) == true) ||
+                             (notif.channelId?.contains("voip", true) == true)
+
+        val isWhatsAppCall = isWhatsApp && (
+            notif.category == Notification.CATEGORY_CALL ||
+            notif.category == "call" ||
+            hasCallStyle ||
+            extras?.containsKey("video_call") == true ||
+            extras?.containsKey("call_id") == true ||
+            extras?.containsKey("call_link") == true ||
+            extras?.containsKey("isGroupCall") == true ||
+            hasCallChannel ||
+            hasCallAnswerAction ||
+            notif.fullScreenIntent != null ||
+            (sbn.isOngoing && (hasCallAnswerAction || hasCallDeclineAction || notif.actions?.isNotEmpty() == true))
+        )
+
+        val isIncomingCall = !isMissedCall && (
+            isWhatsAppCall ||
+            notif.category == Notification.CATEGORY_CALL ||
+            notif.category == "call" ||
+            hasCallStyle ||
+            hasCallChannel ||
+            (hasCallAnswerAction && hasCallDeclineAction) ||
+            (notif.fullScreenIntent != null && (isDialerPkg || isWhatsApp || isVoipPkg))
+        )
+
+        if (isIncomingCall) {
+            handleCallNotification(sbn, if (isWhatsApp) "WhatsApp" else resolveAppLabel(pkg))
+            return
+        }
+
         // Grup özeti bildirimleri ("3 yeni mesaj") gerçek mesaj değildir, tekrar oluşturur
         if (notif.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
@@ -113,38 +181,6 @@ class RearNotificationService : NotificationListenerService() {
             (pkg.contains("clock", ignoreCase = true) || pkg.contains("alarm", ignoreCase = true))
         ) {
             handleAlarmNotification(sbn, title.ifBlank { "Alarm" })
-            return
-        }
-
-        // 1. Check if this notification is an Incoming Call (Stock Xiaomi Dialer, Google Dialer, WhatsApp, Telegram, etc.)
-        val isDialerPkg = pkg.contains("dialer", true) || pkg.contains("incallui", true) ||
-            pkg.contains("telecom", true) || pkg.contains("contacts", true) || pkg.contains("phone", true)
-        val isWhatsApp = pkg.contains("whatsapp", ignoreCase = true)
-
-        val hasCallAnswerAction = notif.actions?.any { action ->
-            action.remoteInputs.isNullOrEmpty() && run {
-                val label = action.title?.toString()?.lowercase().orEmpty()
-                label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
-                label.contains("accept") || label.contains("katıl") || label == "aç"
-            }
-        } == true
-
-        val hasCallDeclineAction = notif.actions?.any { action ->
-            val label = action.title?.toString()?.lowercase().orEmpty()
-            label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
-            label.contains("reject") || label.contains("end") || label.contains("yoksay")
-        } == true
-
-        val hasCallChannel = (notif.channelId?.contains("call", true) == true) ||
-                             (notif.channelId?.contains("voip", true) == true)
-
-        val isCallCategory = notif.category == Notification.CATEGORY_CALL ||
-            hasCallChannel ||
-            (notif.fullScreenIntent != null && isDialerPkg) ||
-            (hasCallAnswerAction && hasCallDeclineAction)
-
-        if (isCallCategory) {
-            handleCallNotification(sbn, if (isWhatsApp) "WhatsApp" else appName, title.ifBlank { if (isWhatsApp) "WhatsApp Sesli Arama" else "Gelen Arama" }, text)
             return
         }
 
@@ -214,17 +250,17 @@ class RearNotificationService : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val notif = sbn.notification
-        if (notif?.category == Notification.CATEGORY_CALL) {
+        val pkg = sbn.packageName?.lowercase().orEmpty()
+        val isCallNotification = notif?.category == Notification.CATEGORY_CALL ||
+            notif?.category == "call" ||
+            pkg.contains("dialer") || pkg.contains("incallui") ||
+            (pkg.contains("whatsapp") && (sbn.tag?.contains("call", true) == true || sbn.id == 4 || notif?.fullScreenIntent != null || notif?.category == Notification.CATEGORY_CALL || notif?.extras?.containsKey("video_call") == true))
+
+        if (isCallNotification && RearStateRepository.currentCall.value != null) {
             val tm = getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
             val callState = tm?.callState ?: android.telephony.TelephonyManager.CALL_STATE_IDLE
-            // Sadece telefon gerçekten boşta (IDLE) ve başka aktif arama bildirimi yoksa sonlandır
             if (callState == android.telephony.TelephonyManager.CALL_STATE_IDLE) {
-                val hasOtherCall = (runCatching {
-                    activeNotifications?.any { it.notification?.category == Notification.CATEGORY_CALL && it.id != sbn.id }
-                }.getOrNull()) == true
-                if (!hasOtherCall) {
-                    RearStateRepository.onCallEnded()
-                }
+                RearStateRepository.onCallEnded()
             }
         }
         if (notif?.category == Notification.CATEGORY_ALARM) {
@@ -270,36 +306,18 @@ class RearNotificationService : NotificationListenerService() {
 
     private fun handleCallNotification(
         sbn: StatusBarNotification,
-        appName: String,
-        callerTitle: String,
-        subtitleText: String
+        appName: String
     ) {
+        val notif = sbn.notification ?: return
+        val extras = notif.extras
+        val pkg = sbn.packageName?.lowercase().orEmpty()
+        val isWhatsApp = pkg.contains("whatsapp") || appName.contains("WhatsApp", ignoreCase = true)
+
         val tm = getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
         val callState = tm?.callState ?: android.telephony.TelephonyManager.CALL_STATE_IDLE
 
-        val actions = sbn.notification.actions.orEmpty()
-        var answerPi: PendingIntent? = null
-        var declinePi: PendingIntent? = null
-
-        actions.forEach { action ->
-            val label = action.title?.toString()?.lowercase().orEmpty()
-            when {
-                action.remoteInputs.isNullOrEmpty() && (
-                    label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
-                    label.contains("accept") || label.contains("katıl") || label == "aç"
-                ) -> {
-                    answerPi = action.actionIntent
-                }
-                label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
-                label.contains("reject") || label.contains("end") || label.contains("yoksay") -> {
-                    declinePi = action.actionIntent
-                }
-            }
-        }
-
-        // Eğer telefon açılmışsa (OFFHOOK) veya sürmekte olan arama bildirimi ise:
-        val isCallActive = callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
-        if (isCallActive) {
+        // Eğer GSM telefonu açılmışsa (OFFHOOK) veya sürmekte olan arama bildirimi ise:
+        if (!isWhatsApp && callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK) {
             RearStateRepository.onCallEnded()
             if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
                 RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
@@ -307,36 +325,114 @@ class RearNotificationService : NotificationListenerService() {
             return
         }
 
-        // Fallback when actions have icons/standard order (0 = Decline, 1 = Answer)
-        if (answerPi == null && declinePi == null && actions.size >= 2) {
-            declinePi = actions[0].actionIntent
-            answerPi = actions[1].actionIntent
+        // 1. Caller Name Extraction
+        var callerName = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+        if (callerName.isBlank()) {
+            callerName = extras?.getString("android.title")?.trim().orEmpty()
+        }
+        if (callerName.isBlank() && android.os.Build.VERSION.SDK_INT >= 28) {
+            @Suppress("DEPRECATION")
+            val person = extras?.getParcelable("android.callPerson") as? android.app.Person
+            callerName = person?.name?.toString()?.trim().orEmpty()
+        }
+        if (callerName.isBlank()) {
+            callerName = extras?.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.trim().orEmpty()
+        }
+        if (callerName.isBlank()) {
+            callerName = (extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                ?: extras?.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
+        }
+        if (looksLikePhoneNumber(callerName)) {
+            ContactResolver.lookupName(this, callerName)?.let { callerName = it }
+        }
+        if (callerName.isBlank()) {
+            callerName = if (isWhatsApp) "WhatsApp Arayan" else "Gelen Arama"
         }
 
-        val resolvedName = when {
-            looksLikePhoneNumber(callerTitle) -> ContactResolver.lookupName(this, callerTitle) ?: callerTitle
-            else -> callerTitle
-        }
-        val numberLine = when {
-            looksLikePhoneNumber(callerTitle) -> callerTitle
-            looksLikePhoneNumber(subtitleText) -> subtitleText
-            else -> subtitleText.ifBlank { appName }
+        // 2. Subtitle / Phone Number extraction
+        var subtitle = (extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)
+            ?: extras?.getCharSequence(Notification.EXTRA_TEXT)
+            ?: extras?.getCharSequence(Notification.EXTRA_SUB_TEXT))?.toString()?.trim().orEmpty()
+        if (isWhatsApp) {
+            val isVideo = extras?.getBoolean("video_call", false) == true
+            if (subtitle.isBlank() || subtitle.equals(callerName, ignoreCase = true)) {
+                subtitle = if (isVideo) "WhatsApp Görüntülü Arama" else "WhatsApp Sesli Arama"
+            }
+        } else if (subtitle.isBlank()) {
+            subtitle = appName
         }
 
-        val isWhatsAppCall = sbn.packageName?.contains("whatsapp", ignoreCase = true) == true || appName.contains("WhatsApp", ignoreCase = true)
+        // 3. PendingIntent Extraction (Answer & Decline)
+        var answerPi: PendingIntent? = null
+        var declinePi: PendingIntent? = null
+
+        // Check CallStyle extras first (API 31+)
+        @Suppress("DEPRECATION")
+        val callAnswerFromExtra = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            extras?.getParcelable("android.answerIntent", PendingIntent::class.java)
+        } else {
+            extras?.getParcelable("android.answerIntent") as? PendingIntent
+        }
+        @Suppress("DEPRECATION")
+        val callDeclineFromExtra = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            extras?.getParcelable("android.declineIntent", PendingIntent::class.java)
+        } else {
+            extras?.getParcelable("android.declineIntent") as? PendingIntent
+        }
+        if (callAnswerFromExtra != null) answerPi = callAnswerFromExtra
+        if (callDeclineFromExtra != null) declinePi = callDeclineFromExtra
+
+        val actions = notif.actions.orEmpty()
+        actions.forEach { action ->
+            val label = action.title?.toString()?.lowercase().orEmpty()
+            val isQuickReply = !action.remoteInputs.isNullOrEmpty()
+            if (!isQuickReply) {
+                if (answerPi == null && (
+                    label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
+                    label.contains("accept") || label.contains("katıl") || label == "aç"
+                )) {
+                    answerPi = action.actionIntent
+                }
+                if (declinePi == null && (
+                    label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
+                    label.contains("reject") || label.contains("end") || label.contains("yoksay") ||
+                    label.contains("dismiss") || label.contains("iptal")
+                )) {
+                    declinePi = action.actionIntent
+                }
+            }
+        }
+
+        // Fallback when actions have icons or custom labels: Action 0 = Decline, Action 1 = Answer
+        val directActions = actions.filter { it.remoteInputs.isNullOrEmpty() && it.actionIntent != null }
+        if (directActions.isNotEmpty()) {
+            if (declinePi == null && answerPi == null && directActions.size >= 2) {
+                declinePi = directActions[0].actionIntent
+                answerPi = directActions[1].actionIntent
+            } else if (answerPi == null && directActions.size >= 2) {
+                answerPi = directActions.firstOrNull { it.actionIntent != declinePi }?.actionIntent
+            } else if (declinePi == null && directActions.isNotEmpty()) {
+                declinePi = directActions.firstOrNull { it.actionIntent != answerPi }?.actionIntent
+            }
+        }
+
+        // Fallback for answer: if still null, use fullScreenIntent to open incoming call UI
+        if (answerPi == null && notif.fullScreenIntent != null) {
+            answerPi = notif.fullScreenIntent
+        }
+
         val callEvent = CallEvent(
-            callerName = resolvedName,
-            phoneNumber = if (isWhatsAppCall) (numberLine.ifBlank { "WhatsApp Sesli Arama" }) else numberLine,
-            sourceApp = if (isWhatsAppCall) "WhatsApp" else appName,
+            callerName = callerName,
+            phoneNumber = subtitle,
+            sourceApp = if (isWhatsApp) "WhatsApp" else appName,
             status = CallStatus.RINGING,
             answerIntent = answerPi,
             declineIntent = declinePi
         )
 
+        RearStateRepository.appendLog("📞 GELEN ARAMA YAKALANDI: $callerName ($appName), AnswerPi=${answerPi != null}, DeclinePi=${declinePi != null}")
         RearStateRepository.onIncomingCall(callEvent)
-        if (RearStateRepository.settings.value.autoWakeRearOnCall) {
-            RearDisplayEngine.launchRearExperience(this, RearScreenMode.INCOMING_CALL)
-        }
+        RearDisplayEngine.launchRearExperience(this, RearScreenMode.INCOMING_CALL)
     }
 
     private val sessionCallbacks = mutableMapOf<MediaController, MediaController.Callback>()

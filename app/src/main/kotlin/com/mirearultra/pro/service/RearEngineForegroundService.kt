@@ -288,9 +288,10 @@ class RearEngineForegroundService : Service(), SensorEventListener {
                 }
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
-                // Eğer giden arama yapılıyorsa (OUTGOING), numara çevrilirken hemen kapatma
+                // Sadece GSM aramalarında kapat, WhatsApp veya VoIP aramalarına karışma!
                 val call = RearStateRepository.currentCall.value
-                if (call?.status != com.mirearultra.pro.core.CallStatus.OUTGOING) {
+                val isVoip = call?.sourceApp?.contains("whatsapp", ignoreCase = true) == true
+                if (!isVoip && call?.status != com.mirearultra.pro.core.CallStatus.OUTGOING) {
                     RearStateRepository.onCallEnded()
                     if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
                         RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
@@ -298,9 +299,14 @@ class RearEngineForegroundService : Service(), SensorEventListener {
                 }
             }
             TelephonyManager.CALL_STATE_IDLE -> {
-                RearStateRepository.onCallEnded()
-                if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
-                    RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
+                // Sadece GSM aramalarında kapat, WhatsApp veya VoIP aramalarına karışma!
+                val call = RearStateRepository.currentCall.value
+                val isVoip = call?.sourceApp?.contains("whatsapp", ignoreCase = true) == true
+                if (!isVoip && call != null) {
+                    RearStateRepository.onCallEnded()
+                    if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
+                        RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
+                    }
                 }
             }
         }

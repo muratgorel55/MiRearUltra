@@ -25,47 +25,49 @@ object CallActionController {
 
     fun answerCall(context: Context, enableSpeakerphone: Boolean) {
         val current = RearStateRepository.currentCall.value
-        var handled = false
+        val isWhatsApp = current?.sourceApp?.contains("whatsapp", ignoreCase = true) == true
+        RearStateRepository.appendLog("⚡ answerCall tetiklendi: app=${current?.sourceApp}, hasIntent=${current?.answerIntent != null}, isWhatsApp=$isWhatsApp")
+
+        val bOptions = if (Build.VERSION.SDK_INT >= 34) {
+            runCatching {
+                android.app.ActivityOptions.makeBasic().apply {
+                    pendingIntentBackgroundActivityStartMode = android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }.toBundle()
+            }.getOrNull()
+        } else null
+
+        val fillInIntent = Intent().apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
 
         // 1. PendingIntent üzerinden cevaplama (HyperOS InCallUI, WhatsApp & Google Dialer)
         current?.answerIntent?.let { pendingIntent ->
             runCatching {
-                pendingIntent.send(context, 0, null)
-                handled = true
+                if (bOptions != null) {
+                    pendingIntent.send(context, 0, fillInIntent, null, null, null, bOptions)
+                } else {
+                    pendingIntent.send(context, 0, fillInIntent)
+                }
             }.onFailure {
+                runCatching { pendingIntent.send() }
+            }
+        }
+
+        // 2. GSM Çağrısıysa (WhatsApp değilse) Telecom ve Tuş Emülasyonu çalıştır
+        if (!isWhatsApp) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
                 runCatching {
-                    pendingIntent.send()
-                    handled = true
+                    val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+                    @Suppress("DEPRECATION")
+                    tm.acceptRingingCall()
                 }
             }
-        }
 
-        // 2. TelecomManager üzerinden cevaplama (GSM)
-        if (!handled && ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
-            runCatching {
-                val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-                @Suppress("DEPRECATION")
-                tm.acceptRingingCall()
-                handled = true
-            }
-        }
-
-        // 3. Shizuku ve Tuş Emülasyonu (GSM aramasını terminalden açma)
-        if (!handled && RearDisplayEngine.checkShizukuStatus()) {
-            scope.launch(Dispatchers.IO) {
-                RearDisplayEngine.executeShizukuShell("cmd telecom accept-ringing-call || input keyevent 5 || input keyevent 79")
-            }
-            handled = true
-        }
-
-        // 4. Doğrudan AudioManager üzerinden kulaklık/arama tuşu tetikleme yedeği
-        if (!handled) {
-            runCatching {
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_HEADSETHOOK)
-                val upEvent = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_HEADSETHOOK)
-                audioManager?.dispatchMediaKeyEvent(downEvent)
-                audioManager?.dispatchMediaKeyEvent(upEvent)
+            // Shizuku Tuş Emülasyonu: keyevent 5 (KEYCODE_CALL). keyevent 79 (HEADSETHOOK) müzik başlattığı için kaldırıldı!
+            if (RearDisplayEngine.checkShizukuStatus()) {
+                scope.launch(Dispatchers.IO) {
+                    RearDisplayEngine.executeShizukuShell("cmd telecom accept-ringing-call; input keyevent 5")
+                }
             }
         }
 
@@ -130,39 +132,57 @@ object CallActionController {
 
     fun rejectOrEndCall(context: Context) {
         val current = RearStateRepository.currentCall.value
-        var handled = false
+        val isWhatsApp = current?.sourceApp?.contains("whatsapp", ignoreCase = true) == true
+        RearStateRepository.appendLog("❌ rejectOrEndCall tetiklendi: app=${current?.sourceApp}, hasIntent=${current?.declineIntent != null}, isWhatsApp=$isWhatsApp")
 
+        val bOptions = if (Build.VERSION.SDK_INT >= 34) {
+            runCatching {
+                android.app.ActivityOptions.makeBasic().apply {
+                    pendingIntentBackgroundActivityStartMode = android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }.toBundle()
+            }.getOrNull()
+        } else null
+
+        val fillInIntent = Intent().apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        // 1. PendingIntent üzerinden reddetme (WhatsApp, Dialer, InCallUI)
         current?.declineIntent?.let { pendingIntent ->
             runCatching {
-                pendingIntent.send(context, 0, null)
-                handled = true
+                if (bOptions != null) {
+                    pendingIntent.send(context, 0, fillInIntent, null, null, null, bOptions)
+                } else {
+                    pendingIntent.send(context, 0, fillInIntent)
+                }
             }.onFailure {
+                runCatching { pendingIntent.send() }
+            }
+        }
+
+        // 2. GSM Çağrısıysa TelecomManager ve Shizuku üzerinden reddetme
+        if (!isWhatsApp) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
                 runCatching {
-                    pendingIntent.send()
-                    handled = true
+                    val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        @Suppress("DEPRECATION")
+                        tm.endCall()
+                    }
                 }
             }
-        }
 
-        if (!handled && ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
-            runCatching {
-                val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    @Suppress("DEPRECATION")
-                    tm.endCall()
-                    handled = true
+            if (RearDisplayEngine.checkShizukuStatus()) {
+                scope.launch(Dispatchers.IO) {
+                    RearDisplayEngine.executeShizukuShell("cmd telecom end-call; input keyevent 6")
                 }
-            }
-        }
-
-        if (!handled && RearDisplayEngine.checkShizukuStatus()) {
-            scope.launch(Dispatchers.IO) {
-                RearDisplayEngine.executeShizukuShell("cmd telecom end-call || input keyevent 6")
             }
         }
 
         restoreAudioAfterCall(context)
         RearStateRepository.onCallEnded()
+        RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
+        RearStateRepository.appendLog("🚫 Arama reddedildi/sonlandırıldı.")
     }
 
     fun silenceRinger(context: Context) {

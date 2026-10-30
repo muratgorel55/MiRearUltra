@@ -1,4 +1,4 @@
-﻿package com.mirearultra.pro.rear
+package com.mirearultra.pro.rear
 
 import android.animation.ValueAnimator
 import android.app.ActivityOptions
@@ -1914,7 +1914,10 @@ class NativeHyperOsRearView(
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), textSize, textColor, Paint.Align.CENTER)
         val txt = TextUtils.ellipsize(label, textPaint, bw * 0.9f, TextUtils.TruncateAt.END).toString()
         canvas.drawText(txt, cx, cy - (textPaint.descent() + textPaint.ascent()) / 2f, textPaint)
-        if (register) hitTargets.add(HitTarget(r, onClick))
+        if (register) {
+            val hitRect = RectF(r.left - 24f, r.top - 24f, r.right + 24f, r.bottom + 24f)
+            hitTargets.add(HitTarget(hitRect, onClick))
+        }
     }
 
     // ---------------------------------------------------------------- dokunma
