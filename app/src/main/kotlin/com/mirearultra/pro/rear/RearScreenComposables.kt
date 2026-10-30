@@ -1073,46 +1073,6 @@ private fun RearDailyCardsView(
         }
 
         // 3. Parking Spot / Floor Pin Card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(CardSurface)
-                .padding(9.dp)
-        ) {
-            Text(
-                text = "🚗 OTOPARK & KONUM HATIRLATICI",
-                color = EmeraldGreen,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Text(
-                text = settings.parkingSpotNote,
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("B1 Katı", "B2 Katı", "B3 Katı", "Açık Otopark").forEach { floor ->
-                    Surface(
-                        color = AmoledBlack,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.clickable {
-                            RearStateRepository.updateSettings { it.copy(parkingSpotNote = "$floor • Park Yeri Kaydedildi") }
-                        }
-                    ) {
-                        Text(
-                            text = floor,
-                            color = Color(0xFFB5BCD0),
-                            fontSize = 9.sp,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-
         // 4. Quick Kitchen / Tea / Egg Timers
         Row(
             modifier = Modifier

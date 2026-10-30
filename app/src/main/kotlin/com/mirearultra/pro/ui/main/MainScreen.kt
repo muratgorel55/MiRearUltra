@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
@@ -375,24 +376,64 @@ private fun LiveRearOverviewTab(
                     }
                 }
 
+                val isProjecting by RearStateRepository.isProjectingTaskToRear.collectAsState()
                 Button(
                     onClick = {
-                        RearDisplayEngine.switchForegroundTaskToRear(context)
-                        android.widget.Toast.makeText(
-                            context,
-                            "🚀 Ön ekrandaki uygulama arka ekrana aktarılıyor...",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        if (isProjecting) {
+                            RearDisplayEngine.stopProjection(context)
+                            android.widget.Toast.makeText(
+                                context,
+                                "⏹️ Yansıtma durduruldu, ana saate dönüldü.",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            RearDisplayEngine.switchForegroundTaskToRear(context)
+                            android.widget.Toast.makeText(
+                                context,
+                                "📲 Ön ekrandaki uygulama arka ekrana aktarılıyor...",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AmberGold),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isProjecting) Color(0xFFD32F2F) else AmberGold
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (isProjecting) Icons.Default.Close else Icons.Default.PhoneAndroid,
+                        contentDescription = null,
+                        tint = if (isProjecting) Color.White else Color.Black,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "🚀 Ön Ekrandaki Uygulamayı Arka Ekrana Aktar",
-                        color = Color.Black,
+                        text = if (isProjecting) "⏹️ Yansıtmayı Durdur (Saate Dön)" else "📲 Ön Ekrandaki Uygulamayı Arka Ekrana Aktar",
+                        color = if (isProjecting) Color.White else Color.Black,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        RearDisplayEngine.restoreXiaomiOriginalRearDisplay(context)
+                        android.widget.Toast.makeText(
+                            context,
+                            "🔄 Xiaomi Orijinal Arka Ekranına dönülüyor...",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🔄 Xiaomi Orijinal Arka Ekranına Dön",
+                        color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )

@@ -27,15 +27,20 @@ object CallActionController {
         val current = RearStateRepository.currentCall.value
         var handled = false
 
-        // 1. PendingIntent üzerinden cevaplama (HyperOS InCallUI & Google Dialer)
+        // 1. PendingIntent üzerinden cevaplama (HyperOS InCallUI, WhatsApp & Google Dialer)
         current?.answerIntent?.let { pendingIntent ->
             runCatching {
-                pendingIntent.send()
+                pendingIntent.send(context, 0, null)
                 handled = true
+            }.onFailure {
+                runCatching {
+                    pendingIntent.send()
+                    handled = true
+                }
             }
         }
 
-        // 2. TelecomManager üzerinden cevaplama
+        // 2. TelecomManager üzerinden cevaplama (GSM)
         if (!handled && ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
             runCatching {
                 val tm = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
@@ -45,8 +50,8 @@ object CallActionController {
             }
         }
 
-        // 3. Shizuku ve Tuş Emülasyonu (Xiaomi HyperOS'ta en güvenilir yol)
-        if (RearDisplayEngine.checkShizukuStatus()) {
+        // 3. Shizuku ve Tuş Emülasyonu (GSM aramasını terminalden açma)
+        if (!handled && RearDisplayEngine.checkShizukuStatus()) {
             scope.launch(Dispatchers.IO) {
                 RearDisplayEngine.executeShizukuShell("cmd telecom accept-ringing-call || input keyevent 5 || input keyevent 79")
             }
@@ -89,6 +94,15 @@ object CallActionController {
         val cleanUri = Uri.parse("tel:${Uri.encode(phoneNumber)}")
         val canDirectCall = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
 
+        // 0. Arka ekranda dış arama animasyonunu ve ekranını anında başlat
+        RearStateRepository.onOutgoingCall(name = nameLabel, phone = phoneNumber)
+        scope.launch {
+            delay(25_000L)
+            if (RearStateRepository.currentCall.value?.status == CallStatus.OUTGOING) {
+                RearStateRepository.onCallEnded()
+            }
+        }
+
         // 1. Doğrudan veya Shizuku üzerinden aramayı başlat
         if (RearDisplayEngine.checkShizukuStatus()) {
             scope.launch(Dispatchers.IO) {
@@ -120,8 +134,13 @@ object CallActionController {
 
         current?.declineIntent?.let { pendingIntent ->
             runCatching {
-                pendingIntent.send()
+                pendingIntent.send(context, 0, null)
                 handled = true
+            }.onFailure {
+                runCatching {
+                    pendingIntent.send()
+                    handled = true
+                }
             }
         }
 

@@ -45,6 +45,7 @@ enum class CallStatus {
     IDLE,
     RINGING,
     ACTIVE,
+    OUTGOING,
     ENDED
 }
 
@@ -158,8 +159,8 @@ data class UserSettingsState(
     val modTeleprompter: Boolean = true,
     val modLedSignAndSos: Boolean = true,
     val modCyberTools: Boolean = true,
-    val modMiniGame: Boolean = true,
-    val modParkingCard: Boolean = true,
+    val modMiniGame: Boolean = false,
+    val modParkingCard: Boolean = false,
     val modStealthAndWave: Boolean = true,
 
     // Core & Automation Settings
@@ -171,13 +172,14 @@ data class UserSettingsState(
     val earProximityCallPrivacy: Boolean = true,
     val maskCallerPhoneNumber: Boolean = true,
     val maskSpeedDialNumbers: Boolean = true,
-    val privacyMaskNotifications: Boolean = true,
+    val privacyMaskNotifications: Boolean = false,
     val stealthPrivacyDimmer: Boolean = false,
     val waveGestureSilenceCall: Boolean = true,
     val flipToActivateRear: Boolean = true,
     val pocketModeProtection: Boolean = true,
     val amoledBurnInProtection: Boolean = true,
     val doubleTapTouchLock: Boolean = false,
+    val autoSleepInactivity10s: Boolean = false,
     val rearScreenTimeoutSec: Int = 20,
     val ecoBatterySaverMode: Boolean = false,
     val autoEcoBelow20Percent: Boolean = true,
@@ -282,6 +284,13 @@ object RearStateRepository {
     private val _isRearScreenDimmedSleep = MutableStateFlow(false)
     val isRearScreenDimmedSleep: StateFlow<Boolean> = _isRearScreenDimmedSleep.asStateFlow()
 
+    private val _isProjectingTaskToRear = MutableStateFlow(false)
+    val isProjectingTaskToRear: StateFlow<Boolean> = _isProjectingTaskToRear.asStateFlow()
+
+    fun setProjectingTaskToRear(active: Boolean) {
+        _isProjectingTaskToRear.value = active
+    }
+
     private val _lastInteractionTimeMs = MutableStateFlow(System.currentTimeMillis())
     val lastInteractionTimeMs: StateFlow<Long> = _lastInteractionTimeMs.asStateFlow()
 
@@ -340,6 +349,7 @@ object RearStateRepository {
                 pocketModeProtection = sp.getBoolean("pocket_mode", true),
                 amoledBurnInProtection = sp.getBoolean("amoled_burn_in", true),
                 doubleTapTouchLock = sp.getBoolean("double_tap_lock", false),
+                autoSleepInactivity10s = sp.getBoolean("auto_sleep_inactivity_10s", false),
                 rearScreenTimeoutSec = sp.getInt("rear_timeout_sec", 20),
                 ecoBatterySaverMode = sp.getBoolean("eco_battery_saver", false),
                 autoEcoBelow20Percent = sp.getBoolean("auto_eco_20", true),
@@ -402,6 +412,7 @@ object RearStateRepository {
                 putBoolean("pocket_mode", updated.pocketModeProtection)
                 putBoolean("amoled_burn_in", updated.amoledBurnInProtection)
                 putBoolean("double_tap_lock", updated.doubleTapTouchLock)
+                putBoolean("auto_sleep_inactivity_10s", updated.autoSleepInactivity10s)
                 putInt("rear_timeout_sec", updated.rearScreenTimeoutSec)
                 putBoolean("eco_battery_saver", updated.ecoBatterySaverMode)
                 putBoolean("auto_eco_20", updated.autoEcoBelow20Percent)
@@ -471,6 +482,19 @@ object RearStateRepository {
             if (enriched.isVipCaller) "🌟 VIP Gelen Arama: ${enriched.callerName} (${enriched.sourceApp})"
             else "📞 Gelen arama algılandı: ${enriched.callerName} (${enriched.sourceApp})"
         )
+    }
+
+    fun onOutgoingCall(name: String, phone: String) {
+        val event = CallEvent(
+            callerName = name,
+            phoneNumber = phone,
+            sourceApp = "Telefon",
+            status = CallStatus.OUTGOING,
+            timestamp = System.currentTimeMillis()
+        )
+        _currentCall.value = event
+        _activeMode.value = RearScreenMode.INCOMING_CALL
+        appendLog("☎️ Dış arama başlatıldı: $name ($phone)")
     }
 
     fun updateCallState(transform: (CallEvent) -> CallEvent) {

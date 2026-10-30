@@ -66,14 +66,12 @@ class RearEngineForegroundService : Service(), SensorEventListener {
 
     private val subScreenOnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (RearDisplayEngine.isProjectionActive) return
             val now = System.currentTimeMillis()
             if (now - lastRearEnsureTimestamp < 2500L) return
             if (!com.mirearultra.pro.rear.RearDisplayActivity.visibleOnRear) {
                 lastRearEnsureTimestamp = now
                 RearDisplayEngine.launchRearIfIdle(this@RearEngineForegroundService)
-
-
-
             }
         }
     }
@@ -100,13 +98,11 @@ class RearEngineForegroundService : Service(), SensorEventListener {
                     previousRearDisplayState != android.view.Display.STATE_ON
                 previousRearDisplayState = d.state
                 if (woke && !com.mirearultra.pro.rear.RearDisplayActivity.visibleOnRear) {
+                    if (RearDisplayEngine.isProjectionActive) return
                     val now = System.currentTimeMillis()
                     if (now - lastRearEnsureTimestamp >= 2500L) {
                         lastRearEnsureTimestamp = now
                         RearDisplayEngine.launchRearIfIdle(this@RearEngineForegroundService)
-
-
-
                     }
                 }
             }
@@ -292,10 +288,13 @@ class RearEngineForegroundService : Service(), SensorEventListener {
                 }
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
-                // Arama açıldığı an arka ekrandaki arama penceresini derhal kapat ve saate dön
-                RearStateRepository.onCallEnded()
-                if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
-                    RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
+                // Eğer giden arama yapılıyorsa (OUTGOING), numara çevrilirken hemen kapatma
+                val call = RearStateRepository.currentCall.value
+                if (call?.status != com.mirearultra.pro.core.CallStatus.OUTGOING) {
+                    RearStateRepository.onCallEnded()
+                    if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
+                        RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
+                    }
                 }
             }
             TelephonyManager.CALL_STATE_IDLE -> {

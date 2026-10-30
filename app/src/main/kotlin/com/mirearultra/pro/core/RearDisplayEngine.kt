@@ -73,6 +73,10 @@ object RearDisplayEngine {
         private set
 
     @Volatile
+    var isProjectionActive = false
+        private set
+
+    @Volatile
     private var awaitingDirectLaunch = false
 
     @Volatile
@@ -377,8 +381,8 @@ object RearDisplayEngine {
         hostToken = token
         mainHandler.removeCallbacks(directLaunchTimeoutRunnable)
 
-        // Arka ekran zaten açıksa yeniden başlatma: sadece uyandır
-        if (RearDisplayActivity.visibleOnRear && checkShizukuStatus()) {
+        // Arka ekran zaten açıksa ve çağrı modu DEĞİLSE yeniden başlatma: sadece uyandır
+        if (RearDisplayActivity.visibleOnRear && checkShizukuStatus() && mode != RearScreenMode.INCOMING_CALL) {
             shellExecutor.execute {
                 runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
             }
@@ -543,6 +547,9 @@ object RearDisplayEngine {
     fun launchRearIfIdle(context: Context) {
         val appContext = context.applicationContext
         shellExecutor.execute {
+            if (isProjectionActive) {
+                return@execute
+            }
             if (isCameraActiveOnRear(appContext)) {
                 // Kamera hala arka ekranda acik, MiRearUltra arka plani devralmasin
                 suppressRelaunchUntil = System.currentTimeMillis() + 60_000L
@@ -828,14 +835,16 @@ object RearDisplayEngine {
                 mainHandler.post { launchRearExperience(context, RearScreenMode.HOME_LAUNCHER) }
                 return@execute
             }
+            isProjectionActive = true
+            RearStateRepository.setProjectingTaskToRear(true)
+            suppressRelaunchUntil = System.currentTimeMillis() + 86400_000L
+
             runCommand(CMD, "statusbar", "collapse")
             runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
             runCommand(CMD, "window", "density", "260", "-d", rearDisplayId.toString())
 
             val frontTask = getFrontDisplayTopTask(context)
             if (frontTask != null) {
-                // Aktif görevi arkaya taşıdıktan sonra saatin geri gelmesini engeller
-                suppressRelaunchUntil = System.currentTimeMillis() + 86400_000L
 
                 var moved = false
                 if (frontTask.taskId > 0) {
@@ -881,6 +890,53 @@ object RearDisplayEngine {
         }
     }
 
+    fun restoreXiaomiOriginalRearDisplay(context: Context) {
+        val rearDisplayId = getTargetRearDisplayId(context)
+        shellExecutor.execute {
+            suppressRelaunchUntil = System.currentTimeMillis() + 86400_000L
+            isProjectionActive = false
+            RearStateRepository.setProjectingTaskToRear(false)
+            RearStateRepository.appendLog("🔄 Orijinal Xiaomi Arka Ekranına dönülüyor...")
+
+            runCatching {
+                val intent = Intent("com.mirearultra.pro.ACTION_DISMISS_REAR").setPackage(context.packageName)
+                context.sendBroadcast(intent)
+            }
+
+            if (checkShizukuStatus()) {
+                val rearTask = getRearDisplayTopTask(context, rearDisplayId)
+                if (rearTask != null && rearTask.taskId > 0 && rearTask.packageName == context.packageName) {
+                    runCommand(AM, "task", "lock", "stop")
+                    runCommand(AM, "stack", "remove", rearTask.taskId.toString())
+                }
+                runCommand(AM, "start", "--display", rearDisplayId.toString(), "-n", "com.xiaomi.subscreencenter/.SubScreenLauncher")
+                runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
+                RearStateRepository.appendLog("✅ Xiaomi Orijinal Arka Ekranı (#$rearDisplayId) başlatıldı.")
+            }
+        }
+    }
+
+    fun stopProjection(context: Context) {
+        val rearDisplayId = getTargetRearDisplayId(context)
+        shellExecutor.execute {
+            isProjectionActive = false
+            RearStateRepository.setProjectingTaskToRear(false)
+            suppressRelaunchUntil = 0L
+            if (checkShizukuStatus()) {
+                if (RearStateRepository.settings.value.autoResetDpiOnReturn) {
+                    runCommand(CMD, "window", "density", "reset", "-d", rearDisplayId.toString())
+                }
+                val rearTask = getRearDisplayTopTask(context, rearDisplayId)
+                if (rearTask != null && rearTask.taskId > 0) {
+                    runCommand("cmd", "activity", "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
+                    runCommand(AM, "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
+                }
+            }
+            mainHandler.post { launchRearExperience(context, RearScreenMode.HOME_LAUNCHER) }
+            RearStateRepository.appendLog("⏹️ Yansıtma sonlandırıldı -> Arka ekran ana temaya döndü.")
+        }
+    }
+
     fun sendBackKeyToRearDisplay(context: Context) {
         val rearDisplayId = getTargetRearDisplayId(context)
         shellExecutor.execute {
@@ -898,6 +954,8 @@ object RearDisplayEngine {
     fun moveRearTaskBackToFrontDisplay(context: Context) {
         val rearDisplayId = getTargetRearDisplayId(context)
         shellExecutor.execute {
+            isProjectionActive = false
+            RearStateRepository.setProjectingTaskToRear(false)
             suppressRelaunchUntil = 0L
             if (checkShizukuStatus()) {
                 if (RearStateRepository.settings.value.autoResetDpiOnReturn) {

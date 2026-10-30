@@ -18,7 +18,7 @@ import java.util.Locale
 enum class AppLanguage(val code: String, val nativeName: String, val englishName: String) {
     AUTO("auto", "Otomatik (Sistem Dili)", "Auto (System Default)"),
     ENGLISH("en", "English", "English"),
-    CHINESE("zh", "简体中文", "Mandarin Chinese"),
+    CHINESE("zh", "中文", "Mandarin Chinese"),
     SPANISH("es", "Español", "Spanish"),
     HINDI("hi", "हिन्दी", "Hindi"),
     ARABIC("ar", "العربية", "Arabic"),

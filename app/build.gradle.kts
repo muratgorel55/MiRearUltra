@@ -11,8 +11,8 @@ android {
     applicationId = "com.mirearultra.pro"
     minSdk = 29
     targetSdk = 37
-    versionCode = 3
-    versionName = "v1.2 Alpha"
+    versionCode = 4
+    versionName = "1.2.5-Alpha"
   }
 
   buildTypes {

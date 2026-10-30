@@ -32,7 +32,13 @@ class RearDisplayActivity : Activity() {
     private var isOnRearDisplay = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var displayManager: DisplayManager? = null
-    private var rearView: NativeHyperOsRearView? = null
+    
+    private val dismissReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            finishAndRemoveTask()
+        }
+    }
+private var rearView: NativeHyperOsRearView? = null
 
     private val redrawRunnable = Runnable {
         if (!isDestroyed && !isFinishing) {
@@ -96,7 +102,13 @@ class RearDisplayActivity : Activity() {
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
         displayManager?.registerDisplayListener(displayListener, mainHandler)
 
-        RearDisplayEngine.onHostShownOnRear(this, currentDisplayId)
+                androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            dismissReceiver,
+            android.content.IntentFilter("com.mirearultra.pro.ACTION_DISMISS_REAR"),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+RearDisplayEngine.onHostShownOnRear(this, currentDisplayId)
         pushFrameToRearPanel()
     }
 
@@ -128,6 +140,12 @@ class RearDisplayActivity : Activity() {
             return
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+        configureLockAndWakeFlags()
+
         isOnRearDisplay = true
         visibleOnRear = true
         RearStateRepository.onUserTouchInteraction()
@@ -150,7 +168,8 @@ class RearDisplayActivity : Activity() {
         if (isOnRearDisplay) {
             visibleOnRear = false
         }
-        super.onDestroy()
+                runCatching { unregisterReceiver(dismissReceiver) }
+super.onDestroy()
     }
 
     override fun onUserInteraction() {

@@ -1,4 +1,4 @@
-package com.mirearultra.pro.rear
+﻿package com.mirearultra.pro.rear
 
 import android.animation.ValueAnimator
 import android.app.ActivityOptions
@@ -63,20 +63,20 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Xiaomi 17 Pro Max ikinci arka ekranı (Display #1, 976x596) için
+ * Xiaomi 17 Pro Max ikinci arka ekranı (Display #1, 976x596) iÇin
  * donanım hızlandırmalı, 120Hz LTPO saf Canvas arayüzü.
  *
  * Özellikler:
  *  - Saat: Sade dijital saat, tarih, güncel adım ve pil durumu
- *  - Müzik: YouTube Music ve medya çalarken dönen plak teması ve dokunulmadığında otomatik ambient karartma
+ *  - Müzik: YouTube Music ve medya Çalarken dönen plak teması ve dokunulmadığında otomatik ambient karartma
  *  - Navigasyon: Canlı dönüş/sokak yönlendirmesi
  *  - Hızlı Arama: Tek dokunuşla hoparlörden arama başlatan rehber kartları
- *  - Günlük Kartlar: Adım ve kalori özeti + hızlı 5/10/15 dk sayaç butonları
- *  - Araçlar: Fener aç/kapat, ses kaydedici ve su terazisi
- *  - Alarm: Otantik Xiaomi HyperOS tarzı saat seçici, açma/kapatma anahtarı ve butonlar
+ *  - Günlük Kartlar: Adım ve kalori özeti + hızlı 5/10/15 dk sayaÇ butonları
+ *  - AraÇlar: Fener aÇ/kapat, ses kaydedici ve su terazisi
+ *  - Alarm: Otantik Xiaomi HyperOS tarzı saat seÇici, aÇma/kapatma anahtarı ve butonlar
  *
- * Soldan sağa kaydırma: Xiaomi Leica arka kamera modunu açar (arka ekrandan hemen kaybolmaz).
- * Gelen arama, mesaj veya çalan alarm: Arka plan bulanıklaşır, üstte aksiyon kartı belirir.
+ * Soldan sağa kaydırma: Xiaomi Leica arka kamera modunu aÇar (arka ekrandan hemen kaybolmaz).
+ * Gelen arama, mesaj veya Çalan alarm: Arka plan bulanıklaşır, üstte aksiyon kartı belirir.
  */
 class NativeHyperOsRearView(
     context: Context,
@@ -88,7 +88,9 @@ class NativeHyperOsRearView(
         MUSIC,
         NAV,
         SPEED_DIAL,
+        DAILY_CARDS,
         TOOLS,
+        TELEPROMPTER,
         MINI_GAME
     }
 
@@ -138,16 +140,12 @@ class NativeHyperOsRearView(
 
     // Üst Perde (Notification Shade) Durumu
     private var isShadeOpen = false
-    private var shadeDragProgress = 0f // 0f kapalı, 1f tam açık
+    private var shadeDragProgress = 0f // 0f kapalı, 1f tam aÇık
 
     // Teleprompter durumu
     private var isPrompterPlaying = false
     private var prompterScrollY = 0f
 
-    // LED Tabela & SOS durumu
-    private var ledScrollX = 0f
-    private var isSosStrobeOn = false
-    private var sosStrobeState = false
     private var chargeAnimAngle = 0f
     private var chargePulsePhase = 0f
     private var isTouchLockedSleep = false
@@ -186,11 +184,6 @@ class NativeHyperOsRearView(
     private val spinTicker = object : Runnable {
         override fun run() {
             if (!isAttachedToWindow) return
-
-            // Pong animasyon adımı
-            if (currentPage == Page.MINI_GAME && !pongGameOver) {
-                stepPongGame()
-            }
             if (RearStateRepository.batteryTelemetry.value.isCharging) {
                 chargeAnimAngle = (chargeAnimAngle + 3.0f) % 360f
                 chargePulsePhase = (chargePulsePhase + 0.08f) % (2f * Math.PI.toFloat())
@@ -228,14 +221,14 @@ class NativeHyperOsRearView(
 
     private fun pages(): List<Page> {
         val s = RearStateRepository.settings.value
-        return buildList {
-            add(Page.CLOCK)
-            if (s.modMediaLyrics) add(Page.MUSIC)
-            if (s.modLiveActivities) add(Page.NAV)
-            if (s.modSpeedDial) add(Page.SPEED_DIAL)
-            if (s.modCyberTools) add(Page.TOOLS)
-            if (s.modMiniGame) add(Page.MINI_GAME)
-        }
+        val list = mutableListOf(Page.CLOCK)
+        if (s.modMediaLyrics) list.add(Page.MUSIC)
+        if (s.modLiveActivities) list.add(Page.NAV)
+        if (s.modSpeedDial) list.add(Page.SPEED_DIAL)
+        if (s.modDailyCards) list.add(Page.DAILY_CARDS)
+        if (s.modCyberTools) list.add(Page.TOOLS)
+        if (s.modTeleprompter) list.add(Page.TELEPROMPTER)
+        return list
     }
 
     private fun pageForMode(mode: RearScreenMode): Page? = when (mode) {
@@ -243,17 +236,21 @@ class NativeHyperOsRearView(
         RearScreenMode.MEDIA_LYRICS -> Page.MUSIC
         RearScreenMode.LIVE_ACTIVITIES -> Page.NAV
         RearScreenMode.SPEED_DIAL -> Page.SPEED_DIAL
+        RearScreenMode.DAILY_CARDS -> Page.DAILY_CARDS
         RearScreenMode.TOOLS_HUB -> Page.TOOLS
+        RearScreenMode.TELEPROMPTER -> Page.TELEPROMPTER
         RearScreenMode.MINI_GAME -> Page.MINI_GAME
         else -> null
     }
 
-    private fun modeForPage(page: Page): RearScreenMode = when (page) {
+    private fun modeForPage(p: Page): RearScreenMode = when (p) {
         Page.CLOCK -> RearScreenMode.HOME_LAUNCHER
         Page.MUSIC -> RearScreenMode.MEDIA_LYRICS
         Page.NAV -> RearScreenMode.LIVE_ACTIVITIES
         Page.SPEED_DIAL -> RearScreenMode.SPEED_DIAL
+        Page.DAILY_CARDS -> RearScreenMode.DAILY_CARDS
         Page.TOOLS -> RearScreenMode.TOOLS_HUB
+        Page.TELEPROMPTER -> RearScreenMode.TELEPROMPTER
         Page.MINI_GAME -> RearScreenMode.MINI_GAME
     }
 
@@ -304,6 +301,68 @@ class NativeHyperOsRearView(
         if (isAttachedToWindow && shouldKeepTicker()) mainHandler.post(spinTicker)
     }
 
+    private data class LavaPalette(
+        val bgTop: Int,
+        val bgBottom: Int,
+        val fluidBottom: Int,
+        val fluidTop: Int,
+        val bubbleColor: Int,
+        val accentColor: Int
+    )
+
+    private fun getLavaPalette(theme: com.mirearultra.pro.core.RearWallpaperTheme): LavaPalette {
+        return when (theme) {
+            com.mirearultra.pro.core.RearWallpaperTheme.CYBER_LEICA -> LavaPalette(
+                bgTop = Color.rgb(18, 5, 5),
+                bgBottom = Color.rgb(5, 2, 2),
+                fluidBottom = Color.rgb(220, 20, 30),
+                fluidTop = Color.rgb(255, 107, 0),
+                bubbleColor = Color.argb(190, 255, 75, 40),
+                accentColor = Color.rgb(255, 60, 60)
+            )
+            com.mirearultra.pro.core.RearWallpaperTheme.NORDIC_AURORA -> LavaPalette(
+                bgTop = Color.rgb(5, 18, 16),
+                bgBottom = Color.rgb(2, 6, 6),
+                fluidBottom = Color.rgb(0, 180, 216),
+                fluidTop = Color.rgb(0, 230, 118),
+                bubbleColor = Color.argb(190, 0, 240, 180),
+                accentColor = Color.rgb(80, 250, 190)
+            )
+            com.mirearultra.pro.core.RearWallpaperTheme.COSMIC_NEBULA -> LavaPalette(
+                bgTop = Color.rgb(16, 5, 24),
+                bgBottom = Color.rgb(5, 2, 10),
+                fluidBottom = Color.rgb(140, 20, 252),
+                fluidTop = Color.rgb(230, 40, 200),
+                bubbleColor = Color.argb(190, 210, 80, 255),
+                accentColor = Color.rgb(210, 100, 255)
+            )
+            com.mirearultra.pro.core.RearWallpaperTheme.CARBON_FIBER -> LavaPalette(
+                bgTop = Color.rgb(16, 17, 19),
+                bgBottom = Color.rgb(4, 5, 6),
+                fluidBottom = Color.rgb(100, 110, 120),
+                fluidTop = Color.rgb(210, 220, 230),
+                bubbleColor = Color.argb(180, 190, 200, 210),
+                accentColor = Color.rgb(230, 240, 250)
+            )
+            com.mirearultra.pro.core.RearWallpaperTheme.SUNSET_AMBER -> LavaPalette(
+                bgTop = Color.rgb(22, 12, 4),
+                bgBottom = Color.rgb(8, 4, 1),
+                fluidBottom = Color.rgb(230, 81, 0),
+                fluidTop = Color.rgb(255, 193, 7),
+                bubbleColor = Color.argb(190, 255, 160, 20),
+                accentColor = Color.rgb(255, 180, 30)
+            )
+            else -> LavaPalette(
+                bgTop = Color.rgb(6, 16, 14),
+                bgBottom = Color.rgb(2, 6, 5),
+                fluidBottom = Color.rgb(0, 180, 136),
+                fluidTop = Color.rgb(80, 240, 190),
+                bubbleColor = Color.argb(190, 60, 240, 170),
+                accentColor = Color.rgb(80, 255, 190)
+            )
+        }
+    }
+
     private fun drawChargingScene(
         canvas: Canvas,
         w: Float,
@@ -311,177 +370,172 @@ class NativeHyperOsRearView(
         cl: Float,
         cw: Float
     ) {
-        // 1. Saf AMOLED Derin Siyah Arka Plan
-        fillPaint.shader = null
-        fillPaint.color = Color.rgb(0, 0, 0)
-        canvas.drawRect(0f, 0f, w, h, fillPaint)
-
         val cx = cl + cw * 0.5f
         val telemetry = RearStateRepository.batteryTelemetry.value
-        val now = Date()
+        val settings = RearStateRepository.settings.value
+        val palette = getLavaPalette(settings.rearWallpaperTheme)
 
-        // -------------------------------------------------------------
-        // ÜST KISIM: Saat, Tarih & Canlı Telemetri (Asla Şarjla Çakışmaz)
-        // -------------------------------------------------------------
-        textPaint.shader = null
-        textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        textPaint.textSize = h * 0.13f
-        textPaint.color = Color.rgb(245, 248, 255)
-        textPaint.setShadowLayer(16f, 0f, 0f, Color.argb(140, 0, 229, 255))
-        canvas.drawText(timeFormat.format(now), cx, h * 0.13f, textPaint)
-        textPaint.clearShadowLayer()
-
-        textPaint.textSize = h * 0.042f
-        textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        textPaint.color = Color.rgb(130, 200, 255)
-        val infoLine = "${dateFormat.format(now)}  •  ${telemetry.voltageMv}mV  •  ${telemetry.temperatureCelsius}°C"
-        canvas.drawText(infoLine, cx, h * 0.19f, textPaint)
-
-        strokePaint.shader = null
-        strokePaint.color = Color.argb(40, 0, 229, 255)
-        strokePaint.strokeWidth = 1.5f
-        canvas.drawLine(cx - cw * 0.35f, h * 0.22f, cx + cw * 0.35f, h * 0.22f, strokePaint)
-
-        // -------------------------------------------------------------
-        // MERKEZ: Fütüristik Sıvı Enerji Şarj Reaktörü & Canlı Watt / Akım
-        // -------------------------------------------------------------
-        val reactorY = h * 0.58f
-        val radius = h * 0.25f
-
-        // Dış Parlama Aurası
-        val pulse = 1f + 0.05f * kotlin.math.sin(chargePulsePhase.toDouble()).toFloat()
-        val glowR = radius * 1.30f * pulse
-        val glowShader = RadialGradient(
-            cx, reactorY, glowR,
-            intArrayOf(
-                Color.argb(75, 0, 229, 255),
-                Color.argb(25, 0, 255, 163),
-                Color.TRANSPARENT
-            ),
-            floatArrayOf(0f, 0.65f, 1f),
+        // 1. Derin degrade arka plan (Aktif Temaya Uyumlu)
+        fillPaint.shader = LinearGradient(
+            0f, 0f, 0f, h,
+            palette.bgTop, palette.bgBottom,
             Shader.TileMode.CLAMP
         )
-        fillPaint.shader = glowShader
-        canvas.drawCircle(cx, reactorY, glowR, fillPaint)
+        canvas.drawRect(0f, 0f, w, h, fillPaint)
         fillPaint.shader = null
 
-        // Reaktör İç Tabanı
-        fillPaint.color = Color.rgb(6, 10, 18)
-        canvas.drawCircle(cx, reactorY, radius, fillPaint)
+        val pct = telemetry.levelPercent.coerceIn(1, 100)
+        // Sıvı Yüksekliği: Batarya doluluğuna göre yüzdesel yükselir (%1'de h*0.22, %100'de h*0.80)
+        val fluidHeight = h * (0.22f + 0.58f * (pct / 100f))
+        val fluidY = h - fluidHeight
 
-        // İç Sıvı Enerji Dalgası
-        val fillPct = (telemetry.levelPercent / 100f).coerceIn(0.05f, 1f)
-        val liquidBaseY = (reactorY + radius) - (radius * 2f * fillPct)
-
-        val saveLiquid = canvas.save()
-        tmpPath.reset()
-        tmpPath.addCircle(cx, reactorY, radius * 0.95f, Path.Direction.CW)
-        canvas.clipPath(tmpPath)
-
+        // 2. Organik Bezier Dalgalanan Sıvı Yüzeyi
         val wavePath = Path()
-        wavePath.moveTo(cx - radius, reactorY + radius)
-        wavePath.lineTo(cx - radius, liquidBaseY)
-        val waveAmp = 5f
-        var xStep = cx - radius
-        while (xStep <= cx + radius) {
-            val waveY = liquidBaseY + waveAmp * kotlin.math.sin(chargePulsePhase + (xStep - cx) * 0.06f).toFloat()
-            wavePath.lineTo(xStep, waveY)
-            xStep += 10f
+        wavePath.moveTo(0f, h)
+        wavePath.lineTo(0f, fluidY)
+        val waveAmp = 10f
+        val waveFreq = 0.016f
+        var wx = 0f
+        while (wx <= w) {
+            val wy = fluidY + (kotlin.math.sin((wx * waveFreq) + chargePulsePhase) * waveAmp).toFloat()
+            wavePath.lineTo(wx, wy)
+            wx += 16f
         }
-        wavePath.lineTo(cx + radius, reactorY + radius)
+        wavePath.lineTo(w, h)
         wavePath.close()
 
-        val liquidShader = LinearGradient(
-            cx, liquidBaseY, cx, reactorY + radius,
-            Color.argb(160, 0, 229, 255),
-            Color.argb(220, 0, 255, 163),
+        fillPaint.shader = LinearGradient(
+            0f, h, 0f, fluidY,
+            palette.fluidBottom, palette.fluidTop,
             Shader.TileMode.CLAMP
         )
-        fillPaint.shader = liquidShader
         canvas.drawPath(wavePath, fillPaint)
         fillPaint.shader = null
-        canvas.restoreToCount(saveLiquid)
 
-        // Dış Dönen Neon Siber Halka
-        val ringMatrix = Matrix()
-        ringMatrix.postRotate(chargeAnimAngle, cx, reactorY)
-        val ringSweep = SweepGradient(
-            cx, reactorY,
-            intArrayOf(
-                Color.rgb(0, 229, 255),
-                Color.rgb(0, 255, 163),
-                Color.rgb(255, 179, 0),
-                Color.rgb(255, 45, 85),
-                Color.rgb(0, 229, 255)
-            ),
-            null
+        // 3. Yükselen Organik Lav Kabarcıkları (Lava Blobs)
+        val bubbleSeeds = listOf(
+            Pair(0.18f, 24f),
+            Pair(0.32f, 18f),
+            Pair(0.48f, 30f),
+            Pair(0.62f, 20f),
+            Pair(0.78f, 26f),
+            Pair(0.88f, 16f),
+            Pair(0.50f, 22f)
         )
-        ringSweep.setLocalMatrix(ringMatrix)
-        strokePaint.shader = ringSweep
-        strokePaint.strokeWidth = 5.5f
-        canvas.drawCircle(cx, reactorY, radius, strokePaint)
-        strokePaint.shader = null
-
-        // İç Zıt Yöne Dönen Amber Elektrik Arkı
-        strokePaint.color = Color.rgb(255, 179, 0)
-        strokePaint.strokeWidth = 6f
-        rect.set(cx - radius * 0.86f, reactorY - radius * 0.86f, cx + radius * 0.86f, reactorY + radius * 0.86f)
-        canvas.drawArc(rect, -chargeAnimAngle * 1.5f, 110f, false, strokePaint)
-
-        // Yörüngede Dönen 8 Parçacık Kıvılcımı
-        for (i in 0 until 8) {
-            val angleRad = Math.toRadians((chargeAnimAngle * 1.1f + i * 45f).toDouble())
-            val px = cx + (radius * 1.04f) * kotlin.math.cos(angleRad).toFloat()
-            val py = reactorY + (radius * 1.04f) * kotlin.math.sin(angleRad).toFloat()
-            val pAlpha = (150 + 90 * kotlin.math.sin((chargePulsePhase + i).toDouble())).toInt().coerceIn(50, 255)
-            fillPaint.color = if (i % 2 == 0) Color.argb(pAlpha, 0, 229, 255) else Color.argb(pAlpha, 255, 179, 0)
-            canvas.drawCircle(px, py, if (i % 2 == 0) 3.5f else 2.5f, fillPaint)
+        fillPaint.color = palette.bubbleColor
+        for (i in bubbleSeeds.indices) {
+            val (relX, radius) = bubbleSeeds[i]
+            val speedFactor = 0.7f + (i * 0.18f)
+            val bubbleProgress = ((chargeAnimAngle * speedFactor + (i * 55f)) % 360f) / 360f
+            val bubbleY = h - (bubbleProgress * (fluidHeight - radius))
+            val wobble = (kotlin.math.sin(chargePulsePhase * 2f + i) * 14f).toFloat()
+            val bubbleX = (w * relX) + wobble
+            if (bubbleY >= fluidY && bubbleY <= h + radius) {
+                canvas.drawCircle(bubbleX, bubbleY, radius, fillPaint)
+            }
         }
 
-        // Merkez Batarya Yüzdesi
-        textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-        textPaint.textSize = h * 0.125f
-        textPaint.color = Color.rgb(240, 255, 250)
-        textPaint.setShadowLayer(14f, 0f, 0f, Color.argb(160, 0, 255, 163))
-        canvas.drawText("${telemetry.levelPercent}%", cx, reactorY - h * 0.01f, textPaint)
-        textPaint.clearShadowLayer()
-
-        // Canlı Gerçek Akım ve Güç (Watt + mA/A + V) Rozeti
-        val wattFormatted = String.format(Locale.US, "%.1f", telemetry.wattage)
-        val ampStr = if (telemetry.currentMilliAmps >= 1000) {
-            String.format(Locale.US, "%.1fA", telemetry.currentMilliAmps / 1000f)
-        } else {
-            "${telemetry.currentMilliAmps}mA"
-        }
-        val voltStr = String.format(Locale.US, "%.1fV", telemetry.voltageMv / 1000f)
-        val wattText = "⚡ ${wattFormatted}W  ($ampStr • $voltStr)"
-
-        val pillW = cw * 0.50f
-        val pillH = h * 0.075f
-        val pillY = reactorY + h * 0.045f
-        rect.set(cx - pillW * 0.5f, pillY, cx + pillW * 0.5f, pillY + pillH)
-        fillPaint.color = Color.argb(180, 15, 22, 35)
-        canvas.drawRoundRect(rect, pillH * 0.5f, pillH * 0.5f, fillPaint)
-
-        strokePaint.color = Color.rgb(255, 179, 0)
-        strokePaint.strokeWidth = 2f
-        canvas.drawRoundRect(rect, pillH * 0.5f, pillH * 0.5f, strokePaint)
-
-        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        textPaint.textSize = h * 0.044f
-        textPaint.color = Color.rgb(255, 190, 20)
-        textPaint.setShadowLayer(8f, 0f, 0f, Color.argb(140, 255, 179, 0))
-        canvas.drawText(wattText, cx, pillY + pillH * 0.68f, textPaint)
-        textPaint.clearShadowLayer()
-
-        // Alt Protokol Başlığı
-        textPaint.textSize = h * 0.040f
+        // 4. Sol Üst: Kompakt Saat ve Tarih (Şarj grafiği ile asla çakışmaz)
+        val now = java.util.Calendar.getInstance()
+        val timeStr = String.format(Locale.US, "%02d:%02d", now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE))
+        textPaint.textSize = h * 0.09f
         textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        textPaint.color = Color.rgb(80, 227, 194)
-        val tagText = telemetry.chargingType.ifBlank { "STANDART ŞARJ" }
-        canvas.drawText(tagText, cx, h * 0.93f, textPaint)
+        textPaint.color = Color.WHITE
+        textPaint.textAlign = Paint.Align.LEFT
+        canvas.drawText(timeStr, cl + 24f, h * 0.15f, textPaint)
+
+        val dateStr = java.text.SimpleDateFormat("d MMMM EEEE", Locale("tr")).format(now.time)
+        textPaint.textSize = h * 0.040f
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        textPaint.color = Color.rgb(180, 190, 205)
+        canvas.drawText(dateStr, cl + 26f, h * 0.22f, textPaint)
+
+        // 5. Merkez: Şarj Türü Etiketi
+        val chargeTag = if (telemetry.chargingType.isNotBlank()) telemetry.chargingType else "⚡ HIZLI ŞARJ"
+        textPaint.textSize = h * 0.052f
+        textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        textPaint.color = palette.accentColor
+        textPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText(chargeTag, cx, h * 0.26f, textPaint)
+
+        // 6. Merkez: Büyük Yüzde Göstergesi
+        textPaint.textSize = h * 0.24f
+        textPaint.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+        textPaint.color = Color.WHITE
+        canvas.drawText("$pct%", cx, h * 0.52f, textPaint)
+
+        // 7. Alt Bilgi Rozetleri: Gerçek Güç (W), Akım (mA), Voltaj (V) ve Sıcaklık (°C)
+        val wattsText = String.format(Locale.US, "%.1fW", telemetry.wattage)
+        val currentText = "${telemetry.currentMilliAmps} mA"
+        val voltText = String.format(Locale.US, "%.2fV", telemetry.voltageMv / 1000f)
+        val tempText = "${telemetry.temperatureCelsius.toInt()}°C"
+
+        val badgeY = h * 0.68f
+        val badges = listOf(
+            "⚡ $wattsText",
+            "🔋 $currentText",
+            "⚡ $voltText",
+            "🌡️ $tempText"
+        )
+        val badgeW = cw * 0.22f
+        val badgeH = h * 0.08f
+        val startBx = cx - (badges.size * badgeW + (badges.size - 1) * 10f) * 0.5f
+
+        fillPaint.style = Paint.Style.FILL
+        fillPaint.color = Color.argb(130, 10, 15, 25)
+        for (i in badges.indices) {
+            val bx = startBx + i * (badgeW + 10f)
+            rect.set(bx, badgeY, bx + badgeW, badgeY + badgeH)
+            canvas.drawRoundRect(rect, 14f, 14f, fillPaint)
+
+            textPaint.textSize = h * 0.038f
+            textPaint.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            textPaint.color = Color.WHITE
+            canvas.drawText(badges[i], bx + badgeW * 0.5f, badgeY + badgeH * 0.65f, textPaint)
+        }
+
+        // 8. En Alt: Diğer Ekranlara Geçiş İpucu
+        textPaint.textSize = h * 0.035f
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        textPaint.color = Color.argb(170, 200, 210, 225)
+        canvas.drawText("Müzik, navigasyon ve hızlı aramalar için kaydırın ⇄", cx, h * 0.88f, textPaint)
+    }
+
+    private fun drawMarqueeText(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        y: Float,
+        maxWidth: Float,
+        paint: Paint,
+        alignLeft: Boolean = false
+    ) {
+        val textWidth = paint.measureText(text)
+        if (textWidth <= maxWidth) {
+            val drawX = if (alignLeft) x else (x - textWidth / 2f)
+            canvas.drawText(text, drawX, y, paint)
+        } else {
+            val overflow = textWidth - maxWidth
+            val now = SystemClock.uptimeMillis()
+            val cycleMs = 6000L
+            val pauseMs = 1200L
+            val activeMs = cycleMs - (pauseMs * 2)
+            val phase = (now % cycleMs)
+            val offset = when {
+                phase < pauseMs -> 0f
+                phase > (cycleMs - pauseMs) -> 0f
+                else -> {
+                    val progress = (phase - pauseMs).toFloat() / activeMs
+                    progress * (overflow + 40f)
+                }
+            }
+            canvas.save()
+            val clipLeft = if (alignLeft) x else (x - maxWidth / 2f)
+            canvas.clipRect(clipLeft, y - paint.textSize * 1.2f, clipLeft + maxWidth, y + paint.textSize * 0.5f)
+            val drawX = clipLeft - offset
+            canvas.drawText(text, drawX, y, paint)
+            canvas.restore()
+        }
     }
 
     override fun onAttachedToWindow() {
@@ -550,7 +604,7 @@ class NativeHyperOsRearView(
         super.onDetachedFromWindow()
     }
 
-    // ---------------------------------------------------------------- çizim
+    // ---------------------------------------------------------------- Çizim
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -598,7 +652,10 @@ class NativeHyperOsRearView(
         // Önizleme ekranı (isPreviewOnFront) ön ekrandayken ASLA cep modundan veya yakınlık sensöründen dolayı karartılmaz!
         // Telefon masada yüzüstü duruyorsa (isPhoneFaceDown) da karartılmaz.
         val isFaceDown = RearStateRepository.isPhoneFaceDown.value
-        if (!isPreviewOnFront && !isFaceDown && ((isEarCovered && settings.earProximityCallPrivacy && call != null) || (isPocket && settings.pocketModeProtection))) {
+        val isCallRinging = call != null && call.status == CallStatus.RINGING
+        val isCallActive = call != null && call.status == CallStatus.ACTIVE
+        val privacyCovered = isEarCovered && settings.earProximityCallPrivacy && isCallActive
+        if (!isPreviewOnFront && !isFaceDown && (privacyCovered || (isPocket && settings.pocketModeProtection && !isCallRinging))) {
             canvas.drawColor(Color.BLACK)
             canvas.restoreToCount(saveAll)
             return
@@ -608,19 +665,20 @@ class NativeHyperOsRearView(
         val idleMs = SystemClock.uptimeMillis() - lastTouchTimestamp
         val isCall = call != null
         val isAlarm = alarm != null
-        if (!isPreviewOnFront && !isCall && !isAlarm && idleMs >= 10_000L) {
+        val autoSleepOn = RearStateRepository.settings.value.autoSleepInactivity10s
+        if (autoSleepOn && !isPreviewOnFront && !isCall && !isAlarm && idleMs >= 10_000L) {
             isTouchLockedSleep = true
         }
 
-        if (!isPreviewOnFront && isTouchLockedSleep && !isCall && !isAlarm) {
+        if (autoSleepOn && !isPreviewOnFront && isTouchLockedSleep && !isCall && !isAlarm) {
             canvas.drawColor(Color.BLACK)
             canvas.restoreToCount(saveAll)
             return
         }
 
         val showAlarm = alarm != null
-        // Kullanıcı isteği: Arama açıldıktan/cevaplandıktan sonra arka ekranda görüşme bilgisi KESİNLİKLE görünmesin (gizlilik).
-        // Yalnızca gelen arama çalarken (RINGING) ekranda görünsün, açıldığı an saat/ana ekrana dönsün.
+        // Kullanıcı isteği: Arama aÇıldıktan/cevaplandıktan sonra arka ekranda görüşme bilgisi KESİNLİKLE görünmesin (gizlilik).
+        // Yalnızca gelen arama Çalarken (RINGING) ekranda görünsün, aÇıldığı an saat/ana ekrana dönsün.
         val isRinging = call?.status == CallStatus.RINGING
         val showCall = !showAlarm && call != null && isRinging
         val overlay = showAlarm || showCall // Bildirimler artık tam ekranı kapatmaz; üst perde olarak iner
@@ -638,7 +696,7 @@ class NativeHyperOsRearView(
                 drawNotificationTopShade(canvas, contentLeft, contentW, h, popup, settings)
             }
 
-            // KULLANICI ÜSTTEN AŞAĞI ÇEKTİĞİNDE: Tam Bildirim Merkezi Perdesi
+            // KULLANICI ÜSTTEN AŞAĞI çEKTİĞİNDE: Tam Bildirim Merkezi Perdesi
             if (isShadeOpen || shadeDragProgress > 0.02f) {
                 drawNotificationShade(canvas, w, h, contentLeft, contentW)
             }
@@ -651,7 +709,7 @@ class NativeHyperOsRearView(
             }
         }
 
-        // Müzik çalarken arka ekrana dokunulmadığında parlaklığı azaltan ambient karartma katmanı
+        // Müzik Çalarken arka ekrana dokunulmadığında parlaklığı azaltan ambient karartma katmanı
         if (!overlay && currentPage == Page.MUSIC && RearStateRepository.mediaState.value.isPlaying) {
             val idleMs = SystemClock.uptimeMillis() - lastTouchTimestamp
             if (idleMs > 8_000L) {
@@ -867,12 +925,12 @@ class NativeHyperOsRearView(
             Page.MUSIC -> drawMusicPage(canvas, cl, cw, h, hits)
             Page.NAV -> drawNavPage(canvas, cl, cw, h, hits)
             Page.SPEED_DIAL -> drawSpeedDialPage(canvas, cl, cw, h, hits)
+            Page.DAILY_CARDS -> drawDailyCardsPage(canvas, cl, cw, h, hits)
             Page.TOOLS -> drawToolsPage(canvas, cl, cw, h, hits)
+            Page.TELEPROMPTER -> drawTeleprompterPage(canvas, cl, cw, h, hits)
             Page.MINI_GAME -> drawMiniGamePage(canvas, cl, cw, h, hits)
         }
     }
-
-    // ---------------------------------------------------------------- saat sayfası
 
     private fun drawClockPage(canvas: Canvas, cl: Float, cw: Float, h: Float) {
         val now = Date()
@@ -903,7 +961,7 @@ class NativeHyperOsRearView(
         setText(Typeface.create("sans-serif-medium", Typeface.NORMAL), h * 0.078f, colText, Paint.Align.LEFT)
         canvas.drawText("%${battery.levelPercent}", bx, rowY, textPaint)
         setText(Typeface.create("sans-serif", Typeface.NORMAL), h * 0.04f, colTextDim, Paint.Align.LEFT)
-        canvas.drawText(if (battery.isCharging) "şarj oluyor" else "pil", bx, rowY + h * 0.06f, textPaint)
+        canvas.drawText(if (battery.isCharging) "Şarj oluyor" else "pil", bx, rowY + h * 0.06f, textPaint)
         drawBar(canvas, bx, rowY + h * 0.09f, barW, h * 0.009f,
             battery.levelPercent / 100f, if (battery.isCharging) colGreen else colAccent)
     }
@@ -943,14 +1001,14 @@ class NativeHyperOsRearView(
         canvas.drawText(TextUtils.ellipsize(appLabel, textPaint, tw, TextUtils.TruncateAt.END).toString(),
             tx, h * 0.20f, textPaint)
 
-        // Başlık (en fazla 2 satır) ve sanatçı
+        // Başlık (en fazla 2 satır) ve sanatÇı
         val titleH = drawWrapped(canvas, media.title, tx, h * 0.235f, tw, h * 0.072f, colText, 2,
             Typeface.create("sans-serif-medium", Typeface.BOLD))
         setText(Typeface.create("sans-serif", Typeface.NORMAL), h * 0.050f, colTextDim, Paint.Align.LEFT)
         canvas.drawText(TextUtils.ellipsize(media.artist, textPaint, tw, TextUtils.TruncateAt.END).toString(),
             tx, h * 0.235f + titleH + h * 0.065f, textPaint)
 
-        // İlerleme çubuğu
+        // İlerleme Çubuğu
         val barY = h * 0.66f
         var position = media.positionMs
         if (media.isPlaying) {
@@ -1112,7 +1170,7 @@ class NativeHyperOsRearView(
             setText(Typeface.create("sans-serif", Typeface.NORMAL), h * 0.045f, Color.argb(160, 255, 255, 255), Paint.Align.LEFT)
             canvas.drawText("Google Haritalar veya Yandex navigasyonu başlayınca sokak yönlendirmeleri burada görünür.", cl, h * 0.62f, textPaint)
 
-            drawPill(canvas, cl + cw * 0.5f, h * 0.82f, cw * 0.70f, h * 0.18f, colAccent, "🗺️ " + RearI18n.t(I18nKey.START_MAPS), Color.BLACK, h * 0.054f, hits) {
+            drawPill(canvas, cl + cw * 0.5f, h * 0.82f, cw * 0.70f, h * 0.18f, colAccent, "🎙️ " + RearI18n.t(I18nKey.START_MAPS), Color.BLACK, h * 0.054f, hits) {
                 runCatching {
                     val mapIntent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=")).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -1235,7 +1293,7 @@ class NativeHyperOsRearView(
         drawBar(canvas, cl + cardW * 0.1f, cardY + cardH * 0.84f, cardW * 0.8f, h * 0.012f,
             if (steps > 0) (steps / 10_000f).coerceIn(0f, 1f) else 0f, colAccent)
 
-        // Sağ Kart: Hızlı Sayaç Butonları
+        // Sağ Kart: Hızlı SayaÇ Butonları
         val rx = cl + cardW + h * 0.04f
         val rightRect = RectF(rx, cardY, rx + cardW, cardY + cardH)
         canvas.drawRoundRect(rightRect, cardH * 0.12f, cardH * 0.12f, fillPaint)
@@ -1263,7 +1321,7 @@ class NativeHyperOsRearView(
         }
     }
 
-    // ---------------------------------------------------------------- araçlar
+    // ---------------------------------------------------------------- araÇlar
 
     private fun drawToolsPage(canvas: Canvas, cl: Float, cw: Float, h: Float, hits: Boolean) {
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.042f, colAccent, Paint.Align.LEFT)
@@ -1281,7 +1339,7 @@ class NativeHyperOsRearView(
         val torchActive = isTorchOn
         val torchColor = if (torchActive) Color.rgb(255, 214, 0) else colTextDim
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.045f, torchColor, Paint.Align.LEFT)
-        canvas.drawText("🔦 " + RearI18n.t(I18nKey.TORCH), cl + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
+        canvas.drawText("▶️ " + RearI18n.t(I18nKey.TORCH), cl + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
 
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.09f, colText, Paint.Align.LEFT)
         canvas.drawText(if (torchActive) "AÇIK" else "KAPALI", cl + cardW * 0.1f, cardY + cardH * 0.50f, textPaint)
@@ -1304,7 +1362,7 @@ class NativeHyperOsRearView(
         val isRecording = RearVoiceRecorderController.isRecording.value
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.045f,
             if (isRecording) colRed else colAccent, Paint.Align.LEFT)
-        canvas.drawText("🎙️ " + RearI18n.t(I18nKey.VOICE_MEMO), rx + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
+        canvas.drawText("🗺️ " + RearI18n.t(I18nKey.VOICE_MEMO), rx + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
 
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.085f, colText, Paint.Align.LEFT)
         canvas.drawText(if (isRecording) "KAYDEDİYOR" else "HAZIR", rx + cardW * 0.1f, cardY + cardH * 0.50f, textPaint)
@@ -1328,7 +1386,7 @@ class NativeHyperOsRearView(
         }
     }
 
-    // ---------------------------------------------------------------- YENİ MODÜLLER: Teleprompter, LED Tabela, Otopark/QR, Mini Oyun
+    // ---------------------------------------------------------------- Teleprompter
 
     // 1. Kamera Vlog Teleprompter Sayfası
     private fun drawTeleprompterPage(canvas: Canvas, cl: Float, cw: Float, h: Float, hits: Boolean) {
@@ -1368,135 +1426,19 @@ class NativeHyperOsRearView(
         val btnY = h * 0.88f
         drawPill(canvas, cl + btnW * 0.5f, btnY, btnW, btnH,
             if (isPrompterPlaying) colMiOrange else colGreen,
-            if (isPrompterPlaying) "⏸️ Durdur" else "▶️ Akışı Başlat",
+            if (isPrompterPlaying) "⏹️ Durdur" else "▶️ Akışı Başlat",
             Color.BLACK, h * 0.048f, hits) {
             isPrompterPlaying = !isPrompterPlaying
             restartSpinIfNeeded()
             invalidate()
         }
 
-        drawPill(canvas, cl + cw - btnW * 0.5f, btnY, btnW, btnH, colSurface, "🔄 Başa Sar", colText, h * 0.048f, hits) {
+        drawPill(canvas, cl + cw - btnW * 0.5f, btnY, btnW, btnH, colSurface, "⏮️ Başa Sar", colText, h * 0.048f, hits) {
             prompterScrollY = 0f
             invalidate()
         }
     }
 
-    // 2. Kayan LED Tabela & SOS Sayfası
-    private fun drawLedSignPage(canvas: Canvas, cl: Float, cw: Float, h: Float, hits: Boolean) {
-        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.042f, colGold, Paint.Align.LEFT)
-        canvas.drawText("KAYAN LED TABELA & SOS", cl, h * 0.14f, textPaint)
-
-        if (isSosStrobeOn && sosStrobeState) {
-            // SOS Acil Durum Flaş Modu
-            canvas.drawColor(Color.rgb(255, 36, 66))
-            setText(Typeface.create("sans-serif-black", Typeface.BOLD), h * 0.28f, Color.WHITE, Paint.Align.CENTER)
-            canvas.drawText("SOS", cl + cw * 0.5f, h * 0.58f, textPaint)
-        } else {
-            // LED Tabela Kartı
-            val signY = h * 0.22f
-            val signH = h * 0.48f
-            rect.set(cl, signY, cl + cw, signY + signH)
-            fillPaint.color = Color.rgb(10, 12, 16)
-            canvas.drawRoundRect(rect, h * 0.05f, h * 0.05f, fillPaint)
-            strokePaint.color = Color.argb(60, 52, 199, 89)
-            strokePaint.strokeWidth = 2f
-            canvas.drawRoundRect(rect, h * 0.05f, h * 0.05f, strokePaint)
-
-            val settings = RearStateRepository.settings.value
-            val bannerText = settings.marqueeBannerText.ifBlank { "XIAOMI 17 PRO MAX • HOS GELDINIZ" }
-
-            val saveClip = canvas.save()
-            clipPath.reset()
-            clipPath.addRoundRect(rect, h * 0.05f, h * 0.05f, Path.Direction.CW)
-            canvas.clipPath(clipPath)
-
-            setText(Typeface.create("monospace", Typeface.BOLD), h * 0.17f, colGreen, Paint.Align.LEFT)
-            val textWidth = textPaint.measureText(bannerText)
-            val loopWidth = textWidth + cw * 0.5f
-            val posX = cl + cw - (ledScrollX % loopWidth)
-            canvas.drawText(bannerText, posX, signY + signH * 0.62f, textPaint)
-            canvas.restoreToCount(saveClip)
-        }
-
-        // SOS / Normal Mod Butonları
-        val btnW = cw * 0.46f
-        val btnH = h * 0.18f
-        val btnY = h * 0.82f
-        drawPill(canvas, cl + btnW * 0.5f, btnY, btnW, btnH,
-            if (isSosStrobeOn) colRed else colSurface,
-            if (isSosStrobeOn) "🚨 SOS Kapat" else "🚨 SOS Acil Çakar",
-            if (isSosStrobeOn) Color.WHITE else colText, h * 0.048f, hits) {
-            isSosStrobeOn = !isSosStrobeOn
-            restartSpinIfNeeded()
-            invalidate()
-        }
-
-        val presets = listOf("YOLDAYIM", "TOPLANTIDAYIM", "ACİL")
-        drawPill(canvas, cl + cw - btnW * 0.5f, btnY, btnW, btnH, colAccent, "Metni Değiştir", Color.BLACK, h * 0.048f, hits) {
-            val nextPreset = presets[(presets.indexOf(RearStateRepository.settings.value.marqueeBannerText) + 1).coerceAtLeast(0) % presets.size]
-            RearStateRepository.updateSettings { it.copy(marqueeBannerText = nextPreset) }
-            invalidate()
-        }
-    }
-
-    // 3. Otopark & QR Kartı Sayfası
-    private fun drawParkingQrPage(canvas: Canvas, cl: Float, cw: Float, h: Float, hits: Boolean) {
-        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.042f, colGreen, Paint.Align.LEFT)
-        canvas.drawText("OTOPARK NOTU & QR CÜZDAN", cl, h * 0.14f, textPaint)
-
-        val cardW = (cw - h * 0.04f) * 0.5f
-        val cardH = h * 0.72f
-        val cardY = h * 0.20f
-
-        // Sol Kart: Otopark Konumu
-        val leftRect = RectF(cl, cardY, cl + cardW, cardY + cardH)
-        fillPaint.color = Color.argb(32, 255, 255, 255)
-        canvas.drawRoundRect(leftRect, cardH * 0.12f, cardH * 0.12f, fillPaint)
-
-        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.045f, colGold, Paint.Align.LEFT)
-        canvas.drawText("🚗 OTOPARK", cl + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
-
-        val settings = RearStateRepository.settings.value
-        val parkNote = settings.parkingSpotNote.ifBlank { "B2 Katı Sarı Alan Sütun C14" }
-        drawWrapped(canvas, parkNote, cl + cardW * 0.1f, cardY + cardH * 0.40f, cardW * 0.8f, h * 0.065f, colText, 3,
-            Typeface.create("sans-serif-bold", Typeface.BOLD))
-
-        // Sağ Kart: QR Kod
-        val rx = cl + cardW + h * 0.04f
-        val rightRect = RectF(rx, cardY, rx + cardW, cardY + cardH)
-        fillPaint.color = Color.argb(32, 255, 255, 255)
-        canvas.drawRoundRect(rightRect, cardH * 0.12f, cardH * 0.12f, fillPaint)
-
-        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.045f, colCyan, Paint.Align.LEFT)
-        canvas.drawText("QR KART", rx + cardW * 0.1f, cardY + cardH * 0.22f, textPaint)
-
-        // QR Matrisi Çizimi
-        val qrSize = cardH * 0.50f
-        val qx = rx + (cardW - qrSize) * 0.5f
-        val qy = cardY + cardH * 0.32f
-        rect.set(qx, qy, qx + qrSize, qy + qrSize)
-        fillPaint.color = Color.WHITE
-        canvas.drawRoundRect(rect, 8f, 8f, fillPaint)
-
-        fillPaint.color = Color.BLACK
-        val grid = 15
-        val cellSize = qrSize / grid
-        val seed = settings.qrCardContent.hashCode()
-        for (r in 0 until grid) {
-            for (c in 0 until grid) {
-                val isCorner = (r < 3 && c < 3) || (r < 3 && c >= grid - 3) || (r >= grid - 3 && c < 3)
-                val bit = kotlin.math.abs(seed xor (r * 31 + c * 17)) % 2 == 0
-                if (isCorner || bit) {
-                    canvas.drawRect(qx + c * cellSize, qy + r * cellSize, qx + (c + 1) * cellSize, qy + (r + 1) * cellSize, fillPaint)
-                }
-            }
-        }
-
-        setText(Typeface.create("sans-serif", Typeface.NORMAL), h * 0.038f, colTextDim, Paint.Align.CENTER)
-        canvas.drawText("Taratmak için uzatın", rx + cardW * 0.5f, cardY + cardH * 0.92f, textPaint)
-    }
-
-    // 4. Retro Ping-Pong Mini Oyun Sayfası (120Hz LTPO)
     private fun drawMiniGamePage(canvas: Canvas, cl: Float, cw: Float, h: Float, hits: Boolean) {
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.042f, colCyan, Paint.Align.LEFT)
         canvas.drawText(RearI18n.t(I18nKey.MINI_GAME), cl, h * 0.14f, textPaint)
@@ -1598,7 +1540,7 @@ class NativeHyperOsRearView(
         }
     }
 
-    // 5. ÜSTTEN AŞAĞI ÇEKİNCE AÇILAN TAM BİLDİRİM MERKEZİ PERDESİ (Notification Shade)
+    // 5. ÜSTTEN AŞAĞI çEKİNCE AçILAN TAM BİLDİRİM MERKEZİ PERDESİ (Notification Shade)
     private fun drawNotificationShade(canvas: Canvas, w: Float, h: Float, cl: Float, cw: Float) {
         val maxH = h * 0.94f
         val currentH = if (isShadeOpen) maxH else maxH * shadeDragProgress
@@ -1651,7 +1593,7 @@ class NativeHyperOsRearView(
         if (currentH > listStartY + h * 0.15f) {
             if (notifs.isEmpty()) {
                 setText(Typeface.create("sans-serif-medium", Typeface.NORMAL), h * 0.06f, colTextDim, Paint.Align.CENTER)
-                canvas.drawText("🎉 Bildirim Yok • Hepsi Okundu", w * 0.5f, listStartY + h * 0.25f, textPaint)
+                canvas.drawText("🔔 Bildirim Yok • Hepsi Okundu", w * 0.5f, listStartY + h * 0.25f, textPaint)
             } else {
                 val cardH = h * 0.28f
                 val gap = h * 0.04f
@@ -1689,7 +1631,7 @@ class NativeHyperOsRearView(
             }
         }
 
-        // Alt Perde Kapatma Çubuğu (Pull handle)
+        // Alt Perde Kapatma çubuğu (Pull handle)
         val handleW = cw * 0.22f
         val handleH = 5f
         val handleX = cl + (cw - handleW) * 0.5f
@@ -1733,19 +1675,26 @@ class NativeHyperOsRearView(
 
     private fun drawCallOverlay(canvas: Canvas, cl: Float, cw: Float, h: Float, call: com.mirearultra.pro.core.CallEvent) {
         val active = call.status == CallStatus.ACTIVE
-        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.05f,
-            if (active) colGreen else colAccent, Paint.Align.CENTER)
-        canvas.drawText(RearI18n.t(I18nKey.INCOMING_CALL), cl + cw / 2f, h * 0.2f, textPaint)
+        val isWhatsApp = call.sourceApp.contains("whatsapp", ignoreCase = true)
+
+        setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.055f,
+            if (active) colGreen else (if (isWhatsApp) colGreen else colAccent), Paint.Align.CENTER)
+        val headerTitle = when {
+            active -> "GÖRÜŞME SÜRÜYOR"
+            isWhatsApp -> "WHATSAPP ARAMASI"
+            else -> RearI18n.t(I18nKey.INCOMING_CALL)
+        }
+        canvas.drawText(headerTitle, cl + cw / 2f, h * 0.20f, textPaint)
 
         setText(Typeface.create("sans-serif-medium", Typeface.BOLD), h * 0.115f, colText, Paint.Align.CENTER)
-        canvas.drawText(TextUtils.ellipsize(call.callerName, textPaint, cw, TextUtils.TruncateAt.END).toString(),
+        canvas.drawText(TextUtils.ellipsize(call.callerName, textPaint, cw * 0.92f, TextUtils.TruncateAt.END).toString(),
             cl + cw / 2f, h * 0.43f, textPaint)
         val settings = RearStateRepository.settings.value
         val callerNumberDisplay = if (settings.maskCallerPhoneNumber) maskPhoneNumber(call.phoneNumber) else call.phoneNumber
         if (call.phoneNumber.isNotBlank() && call.phoneNumber != call.callerName) {
             setText(Typeface.create("sans-serif", Typeface.NORMAL), h * 0.06f, colTextDim, Paint.Align.CENTER)
-            canvas.drawText(TextUtils.ellipsize(callerNumberDisplay, textPaint, cw, TextUtils.TruncateAt.END).toString(),
-                cl + cw / 2f, h * 0.54f, textPaint)
+            canvas.drawText(TextUtils.ellipsize(callerNumberDisplay, textPaint, cw * 0.92f, TextUtils.TruncateAt.END).toString(),
+                cl + cw / 2f, h * 0.55f, textPaint)
         }
 
         val by = h * 0.80f
@@ -1755,10 +1704,10 @@ class NativeHyperOsRearView(
                 CallActionController.rejectOrEndCall(context)
             }
         } else {
-            drawPill(canvas, cl + cw * 0.26f, by, cw * 0.42f, bh, colRed, RearI18n.t(I18nKey.DECLINE), Color.WHITE, h * 0.065f, true) {
+            drawPill(canvas, cl + cw * 0.26f, by, cw * 0.44f, bh, colRed, RearI18n.t(I18nKey.DECLINE), Color.WHITE, h * 0.065f, true) {
                 CallActionController.rejectOrEndCall(context)
             }
-            drawPill(canvas, cl + cw * 0.74f, by, cw * 0.42f, bh, colGreen, RearI18n.t(I18nKey.ANSWER), Color.WHITE, h * 0.065f, true) {
+            drawPill(canvas, cl + cw * 0.74f, by, cw * 0.44f, bh, colGreen, RearI18n.t(I18nKey.ANSWER), Color.WHITE, h * 0.065f, true) {
                 CallActionController.answerCall(
                     context,
                     enableSpeakerphone = RearStateRepository.settings.value.autoSpeakerOnRearAnswer
@@ -1985,26 +1934,19 @@ class NativeHyperOsRearView(
         val isPocket = RearStateRepository.isPocketMode.value
         val isEarCovered = RearStateRepository.isEarProximityCovered.value
         val isFaceDown = RearStateRepository.isPhoneFaceDown.value
-        val isCall = isRingingCall
-        if (!isPreviewOnFront && !isFaceDown && ((isEarCovered && settings.earProximityCallPrivacy && isCall) || (isPocket && settings.pocketModeProtection))) {
+        val isCallActive = currentCall != null && currentCall.status == com.mirearultra.pro.core.CallStatus.ACTIVE
+        val privacyCovered = isEarCovered && settings.earProximityCallPrivacy && isCallActive
+        if (!isPreviewOnFront && !isFaceDown && (privacyCovered || (isPocket && settings.pocketModeProtection && !isRingingCall))) {
             return false
         }
 
         // 10 sn temas olmayınca kilitlenen ekran: YALNIZCA 2 KERE TIKLANINCA UYANIR
-        if (!isPreviewOnFront && isTouchLockedSleep && !isCall) {
+        if (!isPreviewOnFront && isTouchLockedSleep && !isRingingCall) {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                val now = SystemClock.uptimeMillis()
-                if (now - lastDoubleTapCandidateMs < 650L) {
-                    // Çift dokunma başarılı -> Kilit açıldı!
-                    isTouchLockedSleep = false
-                    lastTouchTimestamp = now
-                    RearStateRepository.setRearScreenDimmedSleep(false)
-                    RearStateRepository.onUserTouchInteraction()
-                    restartSpinIfNeeded()
-                    invalidate()
-                    return true
-                }
-                lastDoubleTapCandidateMs = now
+                isTouchLockedSleep = false
+                RearStateRepository.setRearScreenDimmedSleep(false)
+                lastTouchTimestamp = SystemClock.uptimeMillis()
+                restartSpinIfNeeded()
                 invalidate()
                 return true
             }
@@ -2041,14 +1983,14 @@ class NativeHyperOsRearView(
 
                 if (dragMode == 0) {
                     if (isShadeOpen && dy < -16f) {
-                        dragMode = 3 // Perde açıkken yukarı kaydırıp kapatma
+                        dragMode = 3 // Perde aÇıkken yukarı kaydırıp kapatma
                     } else if (!isShadeOpen && touchDownY < h * 0.12f && dy > 28f && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.5f) {
-                        dragMode = 3 // YALNIZCA EKRANIN EN ÜST KENARINDAN ÇEKİLDİĞİNDE BİLDİRİM PERDESİNİ AÇMA
+                        dragMode = 3 // YALNIZCA EKRANIN EN ÜST KENARINDAN çEKİLDİĞİNDE BİLDİRİM PERDESİNİ AçMA
                     } else if (kotlin.math.abs(dy) > h * 0.04f && kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
-                        dragMode = 1 // Sayfalar arası dikey geçiş
+                        dragMode = 1 // Sayfalar arası dikey geÇiş
                         lastMoveY = event.y
                     } else if (dx > w * 0.04f && dx > kotlin.math.abs(dy) * 1.4f) {
-                        dragMode = 2 // Sağa çekince kamera
+                        dragMode = 2 // Sağa Çekince kamera
                     }
                 }
 
