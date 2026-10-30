@@ -381,8 +381,8 @@ object RearDisplayEngine {
         hostToken = token
         mainHandler.removeCallbacks(directLaunchTimeoutRunnable)
 
-        // Arka ekran zaten açıksa ve çağrı modu DEĞİLSE yeniden başlatma: sadece uyandır
-        if (RearDisplayActivity.visibleOnRear && checkShizukuStatus() && mode != RearScreenMode.INCOMING_CALL) {
+        // Arka ekran zaten açıksa yeniden başlatma: sadece uyandır
+        if (RearDisplayActivity.visibleOnRear && checkShizukuStatus()) {
             shellExecutor.execute {
                 runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
             }

@@ -121,31 +121,27 @@ class RearNotificationService : NotificationListenerService() {
             pkg.contains("telecom", true) || pkg.contains("contacts", true) || pkg.contains("phone", true)
         val isWhatsApp = pkg.contains("whatsapp", ignoreCase = true)
 
-        val hasCallActions = notif.actions?.any { action ->
-            val label = action.title?.toString()?.lowercase().orEmpty()
-            label.contains("cevap") || label.contains("answer") || label.contains("accept") || label.contains("katıl") || label == "aç"
+        val hasCallAnswerAction = notif.actions?.any { action ->
+            action.remoteInputs.isNullOrEmpty() && run {
+                val label = action.title?.toString()?.lowercase().orEmpty()
+                label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
+                label.contains("accept") || label.contains("katıl") || label == "aç"
+            }
         } == true
-        val hasDeclineActions = notif.actions?.any { action ->
+
+        val hasCallDeclineAction = notif.actions?.any { action ->
             val label = action.title?.toString()?.lowercase().orEmpty()
-            label.contains("reddet") || label.contains("kapat") || label.contains("decline") || label.contains("reject") || label.contains("end") || label.contains("yoksay")
+            label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
+            label.contains("reject") || label.contains("end") || label.contains("yoksay")
         } == true
+
         val hasCallChannel = (notif.channelId?.contains("call", true) == true) ||
                              (notif.channelId?.contains("voip", true) == true)
 
-        // WhatsApp'ta normal mesaj bildirimleri CATEGORY_MESSAGE'dır veya yalnızca okundu/yanıtla butonları içerir (asla Reddet içermez).
-        // Arama sayılması için: CATEGORY_CALL olması VEYA call/voip kanalında olması VEYA hem Cevapla hem Reddet butonları barındırması gerekir.
-        val isCallCategory = if (isWhatsApp) {
-            notif.category != Notification.CATEGORY_MESSAGE && (
-                notif.category == Notification.CATEGORY_CALL ||
-                hasCallChannel ||
-                (hasCallActions && hasDeclineActions)
-            )
-        } else {
-            notif.category == Notification.CATEGORY_CALL ||
+        val isCallCategory = notif.category == Notification.CATEGORY_CALL ||
             hasCallChannel ||
             (notif.fullScreenIntent != null && isDialerPkg) ||
-            (hasCallActions && hasDeclineActions)
-        }
+            (hasCallAnswerAction && hasCallDeclineAction)
 
         if (isCallCategory) {
             handleCallNotification(sbn, if (isWhatsApp) "WhatsApp" else appName, title.ifBlank { if (isWhatsApp) "WhatsApp Sesli Arama" else "Gelen Arama" }, text)
@@ -288,20 +284,22 @@ class RearNotificationService : NotificationListenerService() {
         actions.forEach { action ->
             val label = action.title?.toString()?.lowercase().orEmpty()
             when {
-                action.remoteInputs.isNullOrEmpty() && (label == "cevapla" || label == "cevap" || label == "answer" || label == "accept" || label == "katıl") -> {
+                action.remoteInputs.isNullOrEmpty() && (
+                    label.contains("cevap") || label.contains("yanıt") || label.contains("answer") ||
+                    label.contains("accept") || label.contains("katıl") || label == "aç"
+                ) -> {
                     answerPi = action.actionIntent
                 }
-                label.contains("reddet") || label.contains("kapat") || label.contains("decline") || label.contains("reject") || label.contains("end") -> {
+                label.contains("reddet") || label.contains("kapat") || label.contains("decline") ||
+                label.contains("reject") || label.contains("end") || label.contains("yoksay") -> {
                     declinePi = action.actionIntent
                 }
             }
         }
 
-        // Eğer telefon açılmışsa (OFFHOOK) veya gelen arama değil de sürmekte olan arama bildirimi ise:
-        // (Süren arama bildirimlerinde cevaplama butonu bulunmaz, sadece kapat/hoparlör olur)
-        val isCallActive = callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK || (sbn.isOngoing && answerPi == null)
+        // Eğer telefon açılmışsa (OFFHOOK) veya sürmekte olan arama bildirimi ise:
+        val isCallActive = callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK
         if (isCallActive) {
-            // Arama zaten sürüyor. Kullanıcı isteği: Arka ekranda görüşme KESİNLİKLE gösterilmez!
             RearStateRepository.onCallEnded()
             if (RearStateRepository.activeMode.value == RearScreenMode.INCOMING_CALL) {
                 RearStateRepository.setMode(RearScreenMode.HOME_LAUNCHER)
@@ -313,14 +311,6 @@ class RearNotificationService : NotificationListenerService() {
         if (answerPi == null && declinePi == null && actions.size >= 2) {
             declinePi = actions[0].actionIntent
             answerPi = actions[1].actionIntent
-        }
-
-        val pkg = sbn.packageName?.lowercase().orEmpty()
-        val isDialer = pkg.contains("dialer") || pkg.contains("incallui") ||
-            pkg.contains("telecom") || pkg.contains("contacts") || pkg.contains("phone")
-        val isGsmCall = isDialer || callState == android.telephony.TelephonyManager.CALL_STATE_RINGING
-        if (answerPi == null && !isGsmCall) {
-            return
         }
 
         val resolvedName = when {
