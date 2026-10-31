@@ -1,12 +1,12 @@
 # 🌌 MiRearUltra (Xiaomi 17 Pro Max Secondary Rear Display Engine)
 
-[![Release](https://img.shields.io/badge/Release-1.2.5--Alpha-orange.svg)](https://github.com/muratgorel55/MiRearUltra/releases)
+[![Release](https://img.shields.io/badge/Release-v1.3.0-orange.svg)](https://github.com/muratgorel55/MiRearUltra/releases)
 [![HyperOS](https://img.shields.io/badge/HyperOS-3.0%2B-blue.svg)](https://miui.com/)
 [![Android](https://img.shields.io/badge/Android-15%20%2F%2016-green.svg)](https://developer.android.com/)
 [![Display](https://img.shields.io/badge/Display-976x596%20AMOLED%20120Hz%20LTPO-purple.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Languages](https://img.shields.io/badge/Languages-10%20Languages%20Supported-yellow.svg)]()
-[![Download APK](https://img.shields.io/badge/Download%20APK-v1.2.5%20Alpha%20(60.7%20MB)-brightgreen?style=for-the-badge&logo=android)](https://github.com/muratgorel55/MiRearUltra/releases/download/v1.2.5-alpha/MiRearUltra-v1.2.5-Alpha-Xiaomi17ProMax.apk)
+[![Download APK](https://img.shields.io/badge/Download%20APK-v1.3.0%20(45.5%20MB)-brightgreen?style=for-the-badge&logo=android)](https://github.com/muratgorel55/MiRearUltra/releases/download/v1.3.0/MiRearUltra-v1.3.0-Xiaomi17ProMax.apk)
 
 ---
 
@@ -21,11 +21,11 @@ Click below to view this entire repository, description, and installation guide 
 
 ---
 
-> ⚠️ **PUBLIC ALPHA NOTICE / AÇIK ALFA DUYURUSU**
+> 🚀 **RELEASE v1.3.0**
 > 
-> **English:** This repository contains the **1.2.5 Alpha** release of MiRearUltra. The project is under **active development**. While core modules, display rendering, and Shizuku integrations are fully functional, you may encounter experimental behaviors or visual adjustments across different HyperOS builds. Feedback and pull requests are warmly welcomed!
+> **English:** This repository contains the **v1.3.0** release of MiRearUltra featuring full rear screenshot capture, 4-way display rotation (0°, 90°, 180°, 270°), dynamic DPI scaling, game mode protection, smart face-down & DND notification mirroring, and a completely modernized Material 3 dashboard.
 > 
-> **Türkçe:** Bu depo MiRearUltra'nın **1.2.5 Alpha (Halka Açık Önizleme)** sürümünü içermektedir. Proje **aktif ve sürekli geliştirilme aşamasındadır**. Çekirdek modüller, ekran render motoru ve Shizuku entegrasyonu kararlı çalışmakla birlikte farklı HyperOS sürümlerinde deneysel davranışlarla karşılaşılabilir. Geri bildirimler ve katkılar memnuniyetle kabul edilir!
+> **Türkçe:** Bu depo MiRearUltra'nın **v1.3.0** sürümünü içermektedir. Arka ekran ekran görüntüsü alma, 4 yönlü ekran döndürme (0°, 90°, 180°, 270°), dinamik DPI ölçekleme, oyun modu koruması, yüzüstü & DND akıllı bildirim yönetimi ve baştan sona yenilenmiş Material 3 kontrol merkezi sunar.
 
 ---
 

@@ -25,6 +25,8 @@ import com.mirearultra.pro.core.RearStateRepository
 
 class RearNotificationService : NotificationListenerService() {
 
+    private val recentNotifSignatures = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+
     companion object {
         private var instance: RearNotificationService? = null
 
@@ -231,6 +233,25 @@ class RearNotificationService : NotificationListenerService() {
             remoteInput = foundRemoteInput
         )
 
+        // Aynı bildirimin (aynı anahtar + aynı metin) tekrar tekrar güncellenmesi (ilerleme, grup güncellemesi vb.)
+        // arka ekranı yeniden uyandırmasın.
+        val dedupeKey = item.id
+        val signature = "${item.sender}|${item.message}"
+        val nowMs = System.currentTimeMillis()
+        val prev = recentNotifSignatures[dedupeKey]
+        if (prev != null && prev.first == signature && nowMs - prev.second < 60_000L) return
+        recentNotifSignatures[dedupeKey] = signature to nowMs
+        if (recentNotifSignatures.size > 64) {
+            recentNotifSignatures.entries.removeAll { nowMs - it.value.second > 120_000L }
+        }
+
+        // Sessiz / düşük öncelikli bildirimler listeye eklenir ama ekranı UYANDIRMAZ
+        val importance = runCatching {
+            val r = Ranking()
+            if (currentRanking.getRanking(sbn.key, r)) r.importance else android.app.NotificationManager.IMPORTANCE_UNSPECIFIED
+        }.getOrDefault(android.app.NotificationManager.IMPORTANCE_UNSPECIFIED)
+        val isSilent = importance != android.app.NotificationManager.IMPORTANCE_UNSPECIFIED && importance < android.app.NotificationManager.IMPORTANCE_DEFAULT
+
         RearStateRepository.postNotification(item)
 
         // Smart Battery Optimization: Don't wake rear screen for regular notifications if user is actively using unlocked front screen
@@ -239,7 +260,15 @@ class RearNotificationService : NotificationListenerService() {
         val isFrontActivelyUsed = power.isInteractive && !keyguard.isKeyguardLocked && !RearStateRepository.isPhoneFaceDown.value
         val skipWake = RearStateRepository.settings.value.skipRearWakeWhenFrontActive && isFrontActivelyUsed && !item.isVip
 
-        if (!skipWake &&
+        // Sistem Rahatsız Etmeyin (DND) kontrolü
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+        val isDndActive = nm != null && nm.currentInterruptionFilter != android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+        val skipDnd = RearStateRepository.settings.value.followDndMode && isDndActive && !item.isVip
+
+        // Yalnızca telefon yüzüstü dururken bildirme kontrolü
+        val skipFaceDown = RearStateRepository.settings.value.onlyWhenFaceDown && !RearStateRepository.isPhoneFaceDown.value && !item.isVip
+
+        if (!skipWake && !isSilent && !skipDnd && !skipFaceDown &&
             RearStateRepository.settings.value.autoWakeRearOnNotification &&
             RearStateRepository.currentCall.value == null
         ) {

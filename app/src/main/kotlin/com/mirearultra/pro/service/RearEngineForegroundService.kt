@@ -118,90 +118,127 @@ class RearEngineForegroundService : Service(), SensorEventListener {
         }.getOrNull()
     }
 
-    private val batteryReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent == null) return
-            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 85)
-            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
-            val pct = (level * 100) / scale
-            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL
-            val tempTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 315)
-            val voltageMv = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4150)
+    private var lastChargeWakeTimestamp = 0L
+    private var lastChargingFlagChange = 0L
+    private var stableCharging = false
 
-            val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            val currentMicroAmps = abs(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW))
+    /** BatteryManager bazı cihazlarda V, bazılarında mV döndürür; mantıklı mV aralığına normalize eder. */
+    private fun normalizeVoltageMv(raw: Int): Int = when {
+        raw <= 0 -> 0
+        raw < 100 -> raw * 1000            // Volt cinsinden gelmiş (ör. 4)
+        raw < 1000 -> raw * 10             // 10 mV birimi (ör. 420)
+        raw > 100_000 -> raw / 1000        // µV cinsinden gelmiş
+        else -> raw
+    }
 
-            var calculatedWatts = 0f
-            var currentMilliAmps = 0
-            var effectiveVoltageMv = voltageMv
-            var chargeTypeTag = ""
+    private fun readBatteryTelemetry(intent: Intent) {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+        if (level < 0) return
+        val pct = ((level * 100) / scale).coerceIn(0, 100)
+        val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+        // Xiaomi şarj kontrolünde durum anlık CHARGING/DISCHARGING arasında gidip gelebilir:
+        // kablo takılıysa (plugged != 0) şarj durumunu koru.
+        val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL ||
+            (plugged != 0 && status != BatteryManager.BATTERY_STATUS_DISCHARGING && status != BatteryManager.BATTERY_STATUS_NOT_CHARGING)
+        val tempTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
 
-            if (isCharging) {
-                val usbV = readSysfsFloat("/sys/class/power_supply/usb/voltage_now")
-                val usbI = readSysfsFloat("/sys/class/power_supply/usb/current_now")
-                val batV = readSysfsFloat("/sys/class/power_supply/battery/voltage_now") ?: (voltageMv * 1000f)
-                val batI = readSysfsFloat("/sys/class/power_supply/battery/current_now")
-
-                if (usbV != null && usbI != null && usbV > 1_000_000f && kotlin.math.abs(usbI) > 50_000f) {
-                    effectiveVoltageMv = (usbV / 1000f).toInt()
-                    currentMilliAmps = (kotlin.math.abs(usbI) / 1000f).toInt()
-                    calculatedWatts = (usbV / 1_000_000f) * (kotlin.math.abs(usbI) / 1_000_000f)
-                } else if (batV != null && batI != null && batV > 1_000_000f && kotlin.math.abs(batI) > 50_000f) {
-                    effectiveVoltageMv = (batV / 1000f).toInt()
-                    currentMilliAmps = (kotlin.math.abs(batI) / 1000f).toInt()
-                    calculatedWatts = (batV / 1_000_000f) * (kotlin.math.abs(batI) / 1_000_000f)
-                } else {
-                    val currentAmps = if (currentMicroAmps > 50_000) {
-                        currentMicroAmps / 1_000_000f
-                    } else {
-                        currentMicroAmps / 1_000f
-                    }
-                    currentMilliAmps = (currentAmps * 1000f).toInt()
-                    calculatedWatts = ((voltageMv / 1000f) * currentAmps)
-                }
-
-                val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
-                val isWireless = plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS
-
-                chargeTypeTag = when {
-                    isWireless -> "50W KABLOSUZ TURBO"
-                    calculatedWatts >= 85f -> "120W HYPER CHARGE"
-                    calculatedWatts >= 55f -> "90W SUPER CHARGE"
-                    calculatedWatts >= 40f -> "67W TURBO CHARGE"
-                    calculatedWatts >= 20f -> "33W HIZLI ŞARJ"
-                    calculatedWatts >= 10f -> "18W HIZLI ŞARJ"
-                    else -> "STANDART ŞARJ (USB)"
-                }
+        var voltageMv = normalizeVoltageMv(intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0))
+        if (voltageMv !in 3000..5000) {
+            // Yayında yoksa/anormalse sysfs'ten (okunabiliyorsa) dene
+            readSysfsFloat("/sys/class/power_supply/battery/voltage_now")?.let {
+                val v = normalizeVoltageMv(it.toInt())
+                if (v in 3000..5000) voltageMv = v
             }
+        }
+        if (voltageMv !in 3000..5000) voltageMv = RearStateRepository.batteryTelemetry.value.voltageMv
 
-            val wasCharging = RearStateRepository.batteryTelemetry.value.isCharging
-            if (isCharging && !wasCharging) {
+        var calculatedWatts = 0f
+        var currentMilliAmps = 0
+        var chargeTypeTag = ""
+
+        if (isCharging) {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+            val rawCurrent = abs(bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW))
+            // Birim tespiti: spesifikasyon µA'dır; bazı cihazlar mA bildirir (şarjda >30A mA olamaz).
+            val milliAmps = when {
+                rawCurrent == 0 || rawCurrent == Int.MIN_VALUE -> 0
+                rawCurrent >= 30_000 -> rawCurrent / 1000      // µA
+                rawCurrent < 100 -> rawCurrent * 1000          // A cinsinden (nadir)
+                else -> rawCurrent                             // zaten mA
+            }
+            currentMilliAmps = milliAmps.coerceAtMost(30_000)
+            calculatedWatts = (voltageMv / 1000f) * (currentMilliAmps / 1000f)
+
+            val isWireless = plugged == BatteryManager.BATTERY_PLUGGED_WIRELESS
+            // Pil tarafı güç, adaptör gücünden ~%10-15 düşüktür; eşikler buna göre ayarlı.
+            chargeTypeTag = when {
+                isWireless -> "50W KABLOSUZ TURBO"
+                calculatedWatts >= 75f -> "120W HYPER CHARGE"
+                calculatedWatts >= 50f -> "90W SUPER CHARGE"
+                calculatedWatts >= 32f -> "67W TURBO CHARGE"
+                calculatedWatts >= 17f -> "33W HIZLI ŞARJ"
+                calculatedWatts >= 8f -> "18W HIZLI ŞARJ"
+                else -> "STANDART ŞARJ (USB)"
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        val wasCharging = stableCharging
+        if (isCharging != wasCharging) {
+            // 3 sn içinde tekrar durum değiştiyse (titreme) yok say
+            if (now - lastChargingFlagChange < 3000L) return
+            lastChargingFlagChange = now
+            stableCharging = isCharging
+            if (isCharging) {
+                keepAliveHandler.removeCallbacks(batteryPollRunnable)
+                keepAliveHandler.postDelayed(batteryPollRunnable, 3_000L)
                 RearStateRepository.appendLog("⚡ Şarj başladı (${String.format(Locale.US, "%.1f", calculatedWatts)}W, ${currentMilliAmps}mA, $chargeTypeTag) -> Arka ekranda şarj animasyonu aktif.")
-                val rearId = RearDisplayEngine.getTargetRearDisplayId(this@RearEngineForegroundService)
-                if (rearId > 0 && RearDisplayEngine.checkShizukuStatus()) {
-                    RearDisplayEngine.runCommand(RearDisplayEngine.INPUT, "-d", rearId.toString(), "keyevent", "KEYCODE_WAKEUP")
+                // Uyandırma sadece gerçek takılmada ve en fazla 30 sn'de bir
+                if (now - lastChargeWakeTimestamp > 30_000L) {
+                    lastChargeWakeTimestamp = now
+                    RearDisplayEngine.wakeRearIfAllowed(this@RearEngineForegroundService)
                 }
-            } else if (!isCharging && wasCharging) {
+            } else {
                 RearStateRepository.appendLog("🔌 Şarjdan çıkarıldı -> Normal saat ekranına dönüldü.")
                 RearStateRepository.setMode(com.mirearultra.pro.core.RearScreenMode.HOME_LAUNCHER)
             }
+        }
 
-            RearStateRepository.updateBatteryTelemetry(
-                BatteryTelemetry(
-                    levelPercent = pct,
-                    isCharging = isCharging,
-                    wattage = calculatedWatts,
-                    currentMilliAmps = currentMilliAmps,
-                    chargingType = chargeTypeTag,
-                    temperatureCelsius = tempTenths / 10f,
-                    voltageMv = effectiveVoltageMv
-                )
+        val prev = RearStateRepository.batteryTelemetry.value
+        RearStateRepository.updateBatteryTelemetry(
+            BatteryTelemetry(
+                levelPercent = pct,
+                isCharging = isCharging,
+                wattage = calculatedWatts,
+                currentMilliAmps = currentMilliAmps,
+                chargingType = chargeTypeTag,
+                temperatureCelsius = if (tempTenths == Int.MIN_VALUE) prev.temperatureCelsius else tempTenths / 10f,
+                voltageMv = voltageMv
             )
+        )
+    }
+
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            readBatteryTelemetry(intent)
         }
     }
 
+    /** Şarjdayken akım/watt değerlerini canlı tutmak için sticky yayını periyodik okur. */
+    private val batteryPollRunnable = object : Runnable {
+        override fun run() {
+            if (RearStateRepository.batteryTelemetry.value.isCharging) {
+                runCatching {
+                    registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.let { readBatteryTelemetry(it) }
+                }
+                keepAliveHandler.postDelayed(this, 3_000L)
+            }
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         RearDisplayEngine.init(this)
@@ -386,12 +423,8 @@ class RearEngineForegroundService : Service(), SensorEventListener {
                 // Android'de `input keyevent KEYCODE_SLEEP` komutu global sistem güç olayıdır ve Display 0'ı (ÖN EKRANI) anında kapatır.
                 // Bu yüzden KEYCODE_SLEEP KESİNLİKLE KULLANILMAZ!
                 // Arka ekran karartması NativeHyperOsRearView içinde donanımsal AMOLED saf siyah (#000000 - 0mW) ile güvenli yapılır.
-                if (!inPocket && (isLyingFlatOnDesk || !isCovered)) {
-                    val rearId = RearDisplayEngine.getTargetRearDisplayId(this)
-                    if (rearId > 0 && RearDisplayEngine.checkShizukuStatus()) {
-                        RearDisplayEngine.launchRearIfIdle(this)
-                    }
-                }
+                // NOT: Yakınlık sensörü her değiştiğinde arka ekranı yeniden başlatmak/uyandırmak
+                // ekranın sürekli uyanmasına yol açıyordu. Kurtarma işini yalnızca bekçi (ensureRearActive) yapar.
             }
             Sensor.TYPE_STEP_COUNTER -> handleStepCounter(event.values[0])
         }
@@ -476,7 +509,7 @@ class RearEngineForegroundService : Service(), SensorEventListener {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("MiRearUltra v1.1 Beta")
+            .setContentTitle("MiRearUltra v1.2.5 Alpha")
             .setContentText("Arka ekran aktif • İletişim ve kontroller devrede")
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_menu_send, "🚀 Arka Ekrana Aktar", switchPendingIntent)
@@ -487,6 +520,7 @@ class RearEngineForegroundService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         keepAliveHandler.removeCallbacks(keepAliveRunnable)
+        keepAliveHandler.removeCallbacks(batteryPollRunnable)
         runCatching { displayManager?.unregisterDisplayListener(displayListener) }
         runCatching { sensorManager?.unregisterListener(this) }
         runCatching { unregisterReceiver(batteryReceiver) }

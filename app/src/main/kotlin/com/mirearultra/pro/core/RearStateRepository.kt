@@ -1,4 +1,4 @@
-﻿package com.mirearultra.pro.core
+package com.mirearultra.pro.core
 
 import android.app.PendingIntent
 import android.app.RemoteInput
@@ -184,6 +184,7 @@ data class UserSettingsState(
     val ecoBatterySaverMode: Boolean = false,
     val autoEcoBelow20Percent: Boolean = true,
     val skipRearWakeWhenFrontActive: Boolean = true,
+    val gameModeProtection: Boolean = true,
     val ltpo1HzClockMode: Boolean = true,
     val vipEdgeLightingEnabled: Boolean = true,
     val vipContactsKeywords: String = "Annem, Babam, Eşim, Patron, Acil",
@@ -191,6 +192,9 @@ data class UserSettingsState(
     val autoResetDpiOnReturn: Boolean = true,
     val clockFaceStyle: ClockFaceStyle = ClockFaceStyle.LEICA_CYBER,
     val targetRearDpi: Int = 240,
+    val rearDisplayRotation: Int = 0, // 0=0°, 1=90°, 2=180°, 3=270°
+    val onlyWhenFaceDown: Boolean = false,
+    val followDndMode: Boolean = true,
     val rearWallpaperTheme: RearWallpaperTheme = RearWallpaperTheme.MINIMAL_OBSIDIAN,
     val customWallpaperPath: String? = null,
 
@@ -298,14 +302,14 @@ object RearStateRepository {
     val settings: StateFlow<UserSettingsState> = _settings.asStateFlow()
 
     private val _statusLog = MutableStateFlow<List<String>>(
-        listOf("MiRearUltra v1.1 Beta (Xiaomi 17 Pro Max) başlatıldı.")
+        listOf("MiRearUltra v1.3.0 (Xiaomi 17 Pro Max) başlatıldı.")
     )
     val statusLog: StateFlow<List<String>> = _statusLog.asStateFlow()
 
+    @Synchronized
     fun init(context: Context) {
         if (prefs != null) return
         val sp = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs = sp
         val styleName = sp.getString("clock_style", ClockFaceStyle.LEICA_CYBER.name) ?: ClockFaceStyle.LEICA_CYBER.name
         val style = runCatching { ClockFaceStyle.valueOf(styleName) }.getOrDefault(ClockFaceStyle.LEICA_CYBER)
         val themeName = sp.getString("rear_wallpaper_theme", RearWallpaperTheme.MINIMAL_OBSIDIAN.name) ?: RearWallpaperTheme.MINIMAL_OBSIDIAN.name
@@ -354,6 +358,7 @@ object RearStateRepository {
                 ecoBatterySaverMode = sp.getBoolean("eco_battery_saver", false),
                 autoEcoBelow20Percent = sp.getBoolean("auto_eco_20", true),
                 skipRearWakeWhenFrontActive = sp.getBoolean("skip_wake_front_active", true),
+                gameModeProtection = sp.getBoolean("game_mode_protection", true),
                 ltpo1HzClockMode = sp.getBoolean("ltpo_1hz_clock", true),
                 vipEdgeLightingEnabled = sp.getBoolean("vip_edge_lighting", true),
                 vipContactsKeywords = sp.getString("vip_keywords", current.vipContactsKeywords) ?: current.vipContactsKeywords,
@@ -361,6 +366,9 @@ object RearStateRepository {
                 autoResetDpiOnReturn = sp.getBoolean("auto_reset_dpi", true),
                 clockFaceStyle = style,
                 targetRearDpi = sp.getInt("target_rear_dpi", 240),
+                rearDisplayRotation = sp.getInt("rear_display_rotation", 0),
+                onlyWhenFaceDown = sp.getBoolean("only_when_face_down", false),
+                followDndMode = sp.getBoolean("follow_dnd_mode", true),
                 rearWallpaperTheme = wallpaperTheme,
                 customWallpaperPath = customPath,
                 waterGlassesCount = sp.getInt("water_count", 4),
@@ -378,11 +386,15 @@ object RearStateRepository {
                 appLanguage = sp.getString("app_language", current.appLanguage) ?: current.appLanguage
             )
         }
+        // Ayarlar yüklendikten SONRA yayınla: aksi halde eşzamanlı updateSettings varsayılanları kalıcı yazabilirdi
+        prefs = sp
     }
 
+    @Synchronized
     fun updateSettings(transform: (UserSettingsState) -> UserSettingsState) {
-        _settings.update { current ->
-            val updated = transform(current)
+        val updated = transform(_settings.value)
+        _settings.value = updated
+        run {
             prefs?.edit()?.apply {
                 putBoolean("mod_call", updated.modIncomingCall)
                 putBoolean("mod_speed_dial", updated.modSpeedDial)
@@ -417,6 +429,7 @@ object RearStateRepository {
                 putBoolean("eco_battery_saver", updated.ecoBatterySaverMode)
                 putBoolean("auto_eco_20", updated.autoEcoBelow20Percent)
                 putBoolean("skip_wake_front_active", updated.skipRearWakeWhenFrontActive)
+                putBoolean("game_mode_protection", updated.gameModeProtection)
                 putBoolean("ltpo_1hz_clock", updated.ltpo1HzClockMode)
                 putBoolean("vip_edge_lighting", updated.vipEdgeLightingEnabled)
                 putString("vip_keywords", updated.vipContactsKeywords)
@@ -426,6 +439,9 @@ object RearStateRepository {
                 putBoolean("auto_reset_dpi", updated.autoResetDpiOnReturn)
                 putString("clock_style", updated.clockFaceStyle.name)
                 putInt("target_rear_dpi", updated.targetRearDpi)
+                putInt("rear_display_rotation", updated.rearDisplayRotation)
+                putBoolean("only_when_face_down", updated.onlyWhenFaceDown)
+                putBoolean("follow_dnd_mode", updated.followDndMode)
                 putInt("water_count", updated.waterGlassesCount)
                 putString("parking_note", updated.parkingSpotNote)
                 putString("marquee_text", updated.marqueeBannerText)
@@ -437,7 +453,6 @@ object RearStateRepository {
                 putString("app_language", updated.appLanguage)
                 apply()
             }
-            updated
         }
     }
 
@@ -554,7 +569,7 @@ object RearStateRepository {
         appendLog("✅ Arka ekrandan yanıt gönderildi: \"$replyText\"")
     }
 
-    private val notificationDismissHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val notificationDismissHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
     private val notificationDismissRunnable = Runnable {
         _latestPopupNotification.value = null
         if (_activeMode.value == RearScreenMode.NOTIFICATION_POPUP) {

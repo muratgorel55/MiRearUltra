@@ -1,4 +1,4 @@
-﻿package com.mirearultra.pro.core
+package com.mirearultra.pro.core
 
 import android.app.ActivityOptions
 import android.app.KeyguardManager
@@ -384,6 +384,7 @@ object RearDisplayEngine {
         // Arka ekran zaten açıksa yeniden başlatma: sadece uyandır
         if (RearDisplayActivity.visibleOnRear && checkShizukuStatus()) {
             shellExecutor.execute {
+                if (gameBlocks(appContext, mode)) return@execute
                 runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
             }
             return
@@ -399,6 +400,10 @@ object RearDisplayEngine {
 
         awaitingDirectLaunch = true
         shellExecutor.execute {
+            if (gameBlocks(appContext, mode)) {
+                awaitingDirectLaunch = false
+                return@execute
+            }
             // Ensure subscreen is enabled and awake, then launch directly onto Display #1
             runCommand(CMD, "settings", "put", "system", "subscreen_switch", "1")
             runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
@@ -406,6 +411,95 @@ object RearDisplayEngine {
             RearStateRepository.appendLog("🚀 Arka Ekran (#$rearDisplayId) doğrudan başlatıldı: $launchRes")
 
             mainHandler.postDelayed(directLaunchTimeoutRunnable, 700L)
+        }
+    }
+
+    // ------------------------------------------------------------------ oyun koruması
+
+    @Volatile private var gameFront = false
+    @Volatile private var gameCheckedAt = 0L
+    @Volatile private var lastGameBlockLogAt = 0L
+
+    private val knownGameKeywords = listOf(
+        "genshin", "mihoyo", "hoyoverse", "pubg", "tencent.ig", "callofduty", "activision", "mobilelegends",
+        "supercell", "roblox", "minecraft", "riotgames", "garena", "netease", "epicgames", "ea.gp",
+        "king.candycrush", "nianticlabs", "gameloft", "ubisoft", "konami", "bandainamco", "square_enix",
+        "miui.gameturbo", "com.xiaomi.gamecenter"
+    )
+
+    private fun isGamePackage(context: Context, pkg: String): Boolean {
+        val lower = pkg.lowercase()
+        if (knownGameKeywords.any { lower.contains(it) }) return true
+        return runCatching {
+            val info = context.packageManager.getApplicationInfo(pkg, 0)
+            @Suppress("DEPRECATION")
+            info.category == android.content.pm.ApplicationInfo.CATEGORY_GAME ||
+                (info.flags and android.content.pm.ApplicationInfo.FLAG_IS_GAME) != 0
+        }.getOrDefault(false)
+    }
+
+    /** Odaktaki uygulamanın paket adı; bulunamazsa null. Arka plan iş parçacığında çağrılmalıdır. */
+    private fun readTopResumedPackages(): List<String>? {
+        val out = readCommand("dumpsys", "activity", "activities", timeoutMs = 2500L) ?: return null
+        // Her ekran (display) için ayrı bir topResumedActivity satırı vardır; hepsini topla.
+        val regex = Regex("""topResumedActivity=ActivityRecord\{[^\s]+ [^\s]+ ([^\s/]+)/""")
+        val pkgs = out.lineSequence().mapNotNull { regex.find(it)?.groupValues?.get(1) }.toList()
+        return pkgs.ifEmpty { null }
+    }
+
+    /**
+     * Ön ekranda oyun açık mı? Sonuç önbelleğe alınır (oyun varken 45 sn, yokken 8 sn) ki oyun sırasında
+     * sürekli `dumpsys` çalıştırıp performansı düşürmesin. Arka plan (shell) iş parçacığında çağrılmalıdır.
+     */
+    fun isGameInFrontBlocking(context: Context): Boolean {
+        if (!RearStateRepository.settings.value.gameModeProtection) return false
+        if (!checkShizukuStatus()) return false
+        val now = System.currentTimeMillis()
+        val ttl = if (gameFront) 45_000L else 8_000L
+        if (now - gameCheckedAt < ttl) return gameFront
+
+        val dm = context.getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager
+        val frontOn = dm?.getDisplay(Display.DEFAULT_DISPLAY)?.state == Display.STATE_ON
+        val result = if (!frontOn) {
+            false
+        } else {
+            readTopResumedPackages()?.any { it != context.packageName && isGamePackage(context, it) } == true
+        }
+        gameCheckedAt = System.currentTimeMillis()
+        if (result != gameFront) {
+            RearStateRepository.appendLog(
+                if (result) "🎮 Oyun algılandı -> Arka ekran müdahalesi duraklatıldı (oyun kesintiye uğramaz)."
+                else "🎮 Oyun kapandı -> Arka ekran normal çalışmaya döndü."
+            )
+        }
+        gameFront = result
+        return result
+    }
+
+    /** Arama ve alarm dışındaki otomatik arka ekran işlemleri oyun sırasında engellenir. */
+    private fun gameBlocks(context: Context, mode: RearScreenMode?): Boolean {
+        if (mode == RearScreenMode.INCOMING_CALL || RearStateRepository.alarmRinging.value != null ||
+            RearStateRepository.currentCall.value != null) return false
+        val blocked = isGameInFrontBlocking(context)
+        if (blocked) {
+            val now = System.currentTimeMillis()
+            if (now - lastGameBlockLogAt > 60_000L) {
+                lastGameBlockLogAt = now
+                RearStateRepository.appendLog("🎮 Oyun açık: arka ekran uyandırma/başlatma atlandı.")
+            }
+        }
+        return blocked
+    }
+
+    /** Şarj gibi doğrudan uyandırma isteklerinin oyun korumasına uyması için. */
+    fun wakeRearIfAllowed(context: Context) {
+        val appContext = context.applicationContext
+        shellExecutor.execute {
+            if (gameBlocks(appContext, null)) return@execute
+            val rearId = getTargetRearDisplayId(appContext)
+            if (rearId > 0 && checkShizukuStatus()) {
+                runCommand(INPUT, "-d", rearId.toString(), "keyevent", "KEYCODE_WAKEUP")
+            }
         }
     }
 
@@ -546,10 +640,13 @@ object RearDisplayEngine {
 
     fun launchRearIfIdle(context: Context) {
         val appContext = context.applicationContext
+        // Arka ekran zaten bizim aktivitemizi gösteriyorsa pasif kurtarma çağrıları uyandırma/yeniden başlatma YAPMAZ
+        if (RearDisplayActivity.visibleOnRear) return
         shellExecutor.execute {
             if (isProjectionActive) {
                 return@execute
             }
+            if (gameBlocks(appContext, null)) return@execute
             if (isCameraActiveOnRear(appContext)) {
                 // Kamera hala arka ekranda acik, MiRearUltra arka plani devralmasin
                 suppressRelaunchUntil = System.currentTimeMillis() + 60_000L
@@ -675,7 +772,11 @@ object RearDisplayEngine {
     }
 
     fun moveTaskToDisplay(taskId: Int, displayId: Int): String {
-        return runCommand(AM, "display", "move-stack", taskId.toString(), displayId.toString())
+        val sCall = runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", taskId.toString(), "i32", displayId.toString())
+        if (sCall == "ok") return "ok"
+        val cmdCall = runCommand("cmd", "activity", "task", "moveToDisplay", taskId.toString(), displayId.toString())
+        if (cmdCall == "ok") return "ok"
+        return runCommand(AM, "task", "moveToDisplay", taskId.toString(), displayId.toString())
     }
 
     /**
@@ -839,28 +940,36 @@ object RearDisplayEngine {
             RearStateRepository.setProjectingTaskToRear(true)
             suppressRelaunchUntil = System.currentTimeMillis() + 86400_000L
 
+            // 1. Xiaomi arka ekran arayüzü çakışmasını önle
+            runCommand(AM, "force-stop", XIAOMI_REAR_PACKAGE)
+
+            // 2. Bildirim çubuğunu topla ve arka ekranı uyandır
             runCommand(CMD, "statusbar", "collapse")
             runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
-            runCommand(CMD, "window", "density", "260", "-d", rearDisplayId.toString())
+
+            // 3. Kullanıcı DPI ve Döndürme ayarını uygula
+            val targetDpi = RearStateRepository.settings.value.targetRearDpi
+            if (targetDpi in 160..480) {
+                runCommand("wm", "density", targetDpi.toString(), "-d", rearDisplayId.toString())
+            }
+            val rotation = RearStateRepository.settings.value.rearDisplayRotation
+            if (rotation in 0..3) {
+                runCommand("wm", "user-rotation", "-d", rearDisplayId.toString(), "lock", rotation.toString())
+            }
 
             val frontTask = getFrontDisplayTopTask(context)
             if (frontTask != null) {
-
                 var moved = false
                 if (frontTask.taskId > 0) {
-                    val move1 = runCommand("cmd", "activity", "task", "moveToDisplay", frontTask.taskId.toString(), rearDisplayId.toString())
-                    if (move1 == "ok") moved = true
+                    val moveService = runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", frontTask.taskId.toString(), "i32", rearDisplayId.toString())
+                    if (moveService == "ok") moved = true
+                    if (!moved) {
+                        val move1 = runCommand("cmd", "activity", "task", "moveToDisplay", frontTask.taskId.toString(), rearDisplayId.toString())
+                        if (move1 == "ok") moved = true
+                    }
                     if (!moved) {
                         val move2 = runCommand(AM, "task", "moveToDisplay", frontTask.taskId.toString(), rearDisplayId.toString())
                         if (move2 == "ok") moved = true
-                    }
-                    if (!moved) {
-                        val move3 = moveTaskToDisplay(frontTask.taskId, rearDisplayId)
-                        if (move3 == "ok") moved = true
-                    }
-                    if (!moved) {
-                        val move4 = runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", frontTask.taskId.toString(), "i32", rearDisplayId.toString())
-                        if (move4 == "ok") moved = true
                     }
                 }
 
@@ -882,12 +991,95 @@ object RearDisplayEngine {
                 }
 
                 restartXiaomiSubscreenIfUnder(frontTask.packageName, rearDisplayId)
-                RearStateRepository.appendLog("🚀 ${frontTask.packageName} (Görev #${frontTask.taskId}) arka ekrana (#$rearDisplayId, 260dpi) aktarıldı.")
+                RearStateRepository.appendLog("🚀 ${frontTask.packageName} (Görev #${frontTask.taskId}) arka ekrana (#$rearDisplayId) aktarıldı.")
             } else {
                 RearStateRepository.appendLog("⚠️ Aktif ön ekran uygulaması tespit edilemedi. Arka ekran ana görünümüne dönülüyor.")
                 mainHandler.post { launchRearExperience(context, RearScreenMode.HOME_LAUNCHER) }
             }
         }
+    }
+
+    fun takeRearScreenshot(context: Context, onResult: ((Boolean, String?) -> Unit)? = null) {
+        val rearDisplayId = getTargetRearDisplayId(context)
+        shellExecutor.execute {
+            if (!checkShizukuStatus()) {
+                mainHandler.post {
+                    RearStateRepository.appendLog("⚠️ Ekran görüntüsü için Shizuku yetkisi gereklidir.")
+                    onResult?.invoke(false, null)
+                }
+                return@execute
+            }
+            try {
+                runCommand(CMD, "statusbar", "collapse")
+                runCommand(INPUT, "-d", rearDisplayId.toString(), "keyevent", "KEYCODE_WAKEUP")
+                Thread.sleep(250)
+
+                val dirPath = "/storage/emulated/0/Pictures/RearDisplay"
+                runCommand("mkdir", "-p", dirPath)
+
+                val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+                val filePath = "$dirPath/RD_$timeStamp.png"
+
+                val capRes = runCommand("screencap", "-p", "-d", rearDisplayId.toString(), filePath)
+                runCommand(AM, "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://$filePath")
+
+                val success = capRes == "ok" || java.io.File(filePath).exists()
+                mainHandler.post {
+                    if (success) {
+                        RearStateRepository.appendLog("📸 Arka ekran görüntüsü Galeri'ye kaydedildi: $filePath")
+                    } else {
+                        RearStateRepository.appendLog("❌ Arka ekran görüntüsü alınamadı.")
+                    }
+                    onResult?.invoke(success, if (success) filePath else null)
+                }
+            } catch (e: Throwable) {
+                mainHandler.post {
+                    RearStateRepository.appendLog("❌ Ekran görüntüsü hatası: ${e.message}")
+                    onResult?.invoke(false, null)
+                }
+            }
+        }
+    }
+
+    fun setRearDisplayRotation(context: Context, rotation: Int): Boolean {
+        val rearDisplayId = getTargetRearDisplayId(context)
+        shellExecutor.execute {
+            if (!checkShizukuStatus()) {
+                RearStateRepository.appendLog("⚠️ Ekran döndürme için Shizuku yetkisi gereklidir.")
+                return@execute
+            }
+            try {
+                val rearTask = getRearDisplayTopTask(context, rearDisplayId)
+                runCommand("wm", "user-rotation", "-d", rearDisplayId.toString(), "lock", rotation.toString())
+                RearStateRepository.updateSettings { it.copy(rearDisplayRotation = rotation) }
+                RearStateRepository.appendLog("🔄 Arka ekran (#$rearDisplayId) yönü ${rotation * 90}° olarak ayarlandı.")
+
+                if (rearTask != null && rearTask.taskId > 0 && isProjectionActive) {
+                    Thread.sleep(500)
+                    val stillTask = getRearDisplayTopTask(context, rearDisplayId)
+                    if (stillTask == null || stillTask.taskId != rearTask.taskId) {
+                        runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", rearTask.taskId.toString(), "i32", rearDisplayId.toString())
+                    }
+                }
+            } catch (e: Throwable) {
+                RearStateRepository.appendLog("❌ Ekran döndürme hatası: ${e.message}")
+            }
+        }
+        return true
+    }
+
+    fun setRearDisplayDpi(context: Context, dpi: Int): Boolean {
+        val rearDisplayId = getTargetRearDisplayId(context)
+        shellExecutor.execute {
+            if (!checkShizukuStatus()) {
+                RearStateRepository.appendLog("⚠️ DPI ayarı için Shizuku yetkisi gereklidir.")
+                return@execute
+            }
+            runCommand("wm", "density", dpi.toString(), "-d", rearDisplayId.toString())
+            RearStateRepository.updateSettings { it.copy(targetRearDpi = dpi) }
+            RearStateRepository.appendLog("📱 Arka ekran (#$rearDisplayId) DPI: $dpi olarak ayarlandı.")
+        }
+        return true
     }
 
     fun restoreXiaomiOriginalRearDisplay(context: Context) {
@@ -924,10 +1116,11 @@ object RearDisplayEngine {
             suppressRelaunchUntil = 0L
             if (checkShizukuStatus()) {
                 if (RearStateRepository.settings.value.autoResetDpiOnReturn) {
-                    runCommand(CMD, "window", "density", "reset", "-d", rearDisplayId.toString())
+                    runCommand("wm", "density", "reset", "-d", rearDisplayId.toString())
                 }
                 val rearTask = getRearDisplayTopTask(context, rearDisplayId)
                 if (rearTask != null && rearTask.taskId > 0) {
+                    runCommand(SERVICE_BIN, "call", "activity_task", "50", "i32", rearTask.taskId.toString(), "i32", Display.DEFAULT_DISPLAY.toString())
                     runCommand("cmd", "activity", "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
                     runCommand(AM, "task", "moveToDisplay", rearTask.taskId.toString(), Display.DEFAULT_DISPLAY.toString())
                 }
@@ -988,11 +1181,12 @@ object RearDisplayEngine {
         val rearDisplayId = getTargetRearDisplayId(context)
         shellExecutor.execute {
             if (checkShizukuStatus()) {
-                val res = runCommand(CMD, "window", "density", "reset", "-d", rearDisplayId.toString())
-                RearStateRepository.appendLog("✨ Arka ekran (#$rearDisplayId) DPI değeri sıfırlandı: $res")
+                val res = runCommand("wm", "density", "reset", "-d", rearDisplayId.toString())
+                RearStateRepository.updateSettings { it.copy(targetRearDpi = 240) }
+                RearStateRepository.appendLog("✨ Arka ekran (#$rearDisplayId) DPI fabrika ayarlarına sıfırlandı: $res")
             } else {
-                RearStateRepository.updateSettings { it.copy(targetRearDpi = 260) }
-                RearStateRepository.appendLog("✨ Hedef arka ekran DPI değeri 260 olarak sıfırlandı.")
+                RearStateRepository.updateSettings { it.copy(targetRearDpi = 240) }
+                RearStateRepository.appendLog("✨ Hedef arka ekran DPI değeri 240 olarak sıfırlandı.")
             }
         }
     }
